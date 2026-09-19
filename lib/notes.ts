@@ -58,11 +58,11 @@ export function listNotes(query = ""): NoteSummary[] {
          WHERE n.title LIKE ? ESCAPE '\\' OR n.text_content LIKE ? ESCAPE '\\'
          ORDER BY n.updated_at DESC, n.id DESC`,
       )
-      .all(like, like) as SummaryRow[];
+      .all(like, like) as unknown as SummaryRow[];
   } else {
     rows = db
       .prepare(`${baseSelect} ORDER BY n.updated_at DESC, n.id DESC`)
-      .all() as SummaryRow[];
+      .all() as unknown as SummaryRow[];
   }
 
   return rows.map((row) => ({
@@ -78,7 +78,7 @@ export function listNotes(query = ""): NoteSummary[] {
 export function getNote(id: number): Note | null {
   const row = getDb()
     .prepare("SELECT * FROM notes WHERE id = ?")
-    .get(id) as NoteRow | undefined;
+    .get(id) as unknown as NoteRow | undefined;
 
   if (!row) return null;
 
@@ -127,7 +127,7 @@ export function deleteNote(id: number): boolean {
   const attachments = listAttachments(id);
   const info = getDb().prepare("DELETE FROM notes WHERE id = ?").run(id);
 
-  if (info.changes === 0) return false;
+  if (Number(info.changes) === 0) return false;
 
   for (const attachment of attachments) {
     removeStoredFile(attachment.url);

@@ -33,7 +33,7 @@ function mapAttachment(row: FileRow): Attachment {
 export function listAttachments(noteId: number): Attachment[] {
   const rows = getDb()
     .prepare("SELECT * FROM files WHERE note_id = ? ORDER BY id ASC")
-    .all(noteId) as FileRow[];
+    .all(noteId) as unknown as FileRow[];
   return rows.map(mapAttachment);
 }
 
@@ -64,7 +64,7 @@ export function insertAttachment(input: {
 
   const row = db
     .prepare("SELECT * FROM files WHERE id = ?")
-    .get(info.lastInsertRowid) as FileRow;
+    .get(Number(info.lastInsertRowid)) as unknown as FileRow;
 
   return mapAttachment(row);
 }

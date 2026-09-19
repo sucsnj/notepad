@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 
 const databaseFile = path.resolve(
   /* turbopackIgnore: true */
@@ -18,15 +18,15 @@ export const maxUploadBytes =
   Number(process.env.MAX_UPLOAD_SIZE_MB ?? 20) * 1024 * 1024;
 
 declare global {
-  var __notepadDb: Database.Database | undefined;
+  var __notepadDb: DatabaseSync | undefined;
 }
 
-function createDatabase(): Database.Database {
+function createDatabase(): DatabaseSync {
   fs.mkdirSync(path.dirname(databaseFile), { recursive: true });
 
-  const database = new Database(databaseFile);
-  database.pragma("journal_mode = WAL");
-  database.pragma("foreign_keys = ON");
+  const database = new DatabaseSync(databaseFile);
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA foreign_keys = ON");
   database.exec(`
     CREATE TABLE IF NOT EXISTS notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +56,7 @@ function createDatabase(): Database.Database {
   return database;
 }
 
-export function getDb(): Database.Database {
+export function getDb(): DatabaseSync {
   if (!globalThis.__notepadDb) {
     globalThis.__notepadDb = createDatabase();
   }

@@ -15,8 +15,6 @@ function getAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
-  // better-sqlite3 e um modulo nativo: mantenha-o fora do bundle do servidor.
-  serverExternalPackages: ["better-sqlite3"],
   // Modo dev: libera requisicoes vindas por IP (LAN/Tailscale) e nomes .local,
   // senao o Next.js bloqueia os assets de desenvolvimento (HMR).
   allowedDevOrigins: getAllowedDevOrigins(),

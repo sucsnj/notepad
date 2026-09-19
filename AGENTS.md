@@ -10,20 +10,20 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Project conventions
 
-Bloco de notas online (SPA): Next.js App Router + TypeScript, Tailwind CSS v4, SQLite (`better-sqlite3`), editor TipTap v3. UI cliente/idioma: pt-BR.
+Bloco de notas online (SPA): Next.js App Router + TypeScript, Tailwind CSS v4, SQLite via `node:sqlite` (módulo nativo do Node, sem dependência C++), editor TipTap v3. UI cliente/idioma: pt-BR.
 
 ## Commands
-- `npm run dev` / `npm start` — rodam via `scripts/serve.mjs`, que lê `PORT` do `.env` e executa `next dev|start -H <host> -p <port>`. **Nunca** chame `next dev -H <IP específico>` direto: binding limitado a uma interface quebra o acesso via `localhost`.
+- `npm run dev` / `npm start` — rodam via `scripts/serve.mjs`, que lê `PORT` do `.env` e executa `next dev|start -H <host> -p <port>`. O script injeta `--experimental-sqlite` quando o Node é `< 23` (necessário para o `node:sqlite`). **Nunca** chame `next dev`/`next start` direto: além do `-H 0.0.0.0`, o flag do SQLite tem que ser repassado.
 - `npm run typecheck` (`tsc --noEmit`), `npm run lint` (eslint), `npm run build` — validar antes de concluir qualquer tarefa.
 - `powershell -ExecutionPolicy Bypass -File scripts/firewall.ps1` (como Administrador) — abre a porta do app no Firewall do Windows para acesso de outros dispositivos (LAN/Tailscale/Radmin).
 
 ## Next.js 16 (breaking changes)
 - Documentação oficial local em `node_modules/next/dist/docs/` — ler antes de escrever código (route handlers recebem `params` como `Promise`; `PORT` não é lido do `.env` pelo CLI; etc.).
-- `next.config.ts`: `serverExternalPackages: ["better-sqlite3"]` (módulo nativo) e `allowedDevOrigins` (padrão `*.*.*.*`, `**.local`; sobrescrever via `ALLOWED_DEV_ORIGINS` no `.env`, separado por vírgula, wildcards `*`/`**`). Esse bloqueio anti-rebinding só existe no modo dev e atinge assets `/_next`/HMR.
+- `next.config.ts` tem apenas `allowedDevOrigins` (padrão `*.*.*.*`, `**.local`; sobrescrever via `ALLOWED_DEV_ORIGINS` no `.env`, separado por vírgula, wildcards `*`/`**`). Esse bloqueio anti-rebinding só existe no modo dev e atinge assets `/_next`/HMR. Não há mais `serverExternalPackages` (o `node:sqlite` é built-in).
 - TipTap v3: `StarterKit` já inclui Link/Underline; `Image` é extensão separada; `Placeholder` vem de `@tiptap/extensions`. `useEditor` usa `immediatelyRender: false` (SSR). Lint React 19 proíbe `setState` em effect refs durante render (ex.: `ThemeToggle` usa `useSyncExternalStore`).
 
 ## Banco e arquivos
-- SQLite em `data/notepad.db` (WAL, FK). Esquema e singleton (globalThis, sobrevive HMR) em `lib/db.ts`; `data/` é ignorado pelo git.
+- SQLite via módulo nativo `node:sqlite` (`DatabaseSync`) em `data/notepad.db` (WAL, FK). Esquema e singleton (globalThis, sobrevive HMR) em `lib/db.ts`; `data/` é ignorado pelo git.
 - Anexos ficam em `public/uploads/<noteId>/<storedName>` com metadados na tabela `files` (tabela `notes` guarda `content` HTML + `text_content` para busca LIKE em `lib/notes.ts`). `public/uploads/*` é ignorado exceto `.gitkeep`.
 
 ## Acesso pela rede
