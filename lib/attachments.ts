@@ -69,6 +69,25 @@ export function insertAttachment(input: {
   return mapAttachment(row);
 }
 
+export function deleteAttachment(
+  attachmentId: number,
+  noteId: number,
+): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT * FROM files WHERE id = ? AND note_id = ?")
+    .get(attachmentId, noteId) as FileRow | undefined;
+
+  if (!row) return false;
+
+  db.prepare("DELETE FROM files WHERE id = ? AND note_id = ?").run(
+    attachmentId,
+    noteId,
+  );
+  removeStoredFile(row.web_path);
+  return true;
+}
+
 function resolveUploadPath(webPath: string): string | null {
   if (!webPath.startsWith(uploadPrefix)) return null;
 

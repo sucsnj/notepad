@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { Extension } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -20,6 +21,7 @@ import {
   FileIcon,
   ImageIcon,
   TrashIcon,
+  XIcon,
 } from "./Icons";
 
 export interface EditorChange {
@@ -37,6 +39,26 @@ export interface NoteEditorProps {
 }
 
 const extensions = [
+  Extension.create({
+    name: "lineHeight",
+    addGlobalAttributes() {
+      return [
+        {
+          types: ["paragraph", "heading"],
+          attributes: {
+            lineHeight: {
+              default: null,
+              parseHTML: (element) => element.style.lineHeight || null,
+              renderHTML: (attributes) =>
+                attributes.lineHeight
+                  ? { style: `line-height: ${attributes.lineHeight}` }
+                  : {},
+            },
+          },
+        },
+      ];
+    },
+  }),
   StarterKit.configure({
     heading: { levels: [1, 2, 3] },
     link: {
@@ -110,6 +132,31 @@ export default function NoteEditor({
       content: editor?.getHTML() ?? note.content,
       textContent: editor?.getText() ?? "",
     });
+  };
+
+  const handleRemoveAttachment = async (attachment: Attachment) => {
+    setUploadError(null);
+
+    try {
+      const params = new URLSearchParams({
+        noteId: String(note.id),
+        attachmentId: String(attachment.id),
+      });
+      const response = await fetch(`/api/upload?${params}`, { method: "DELETE" });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Falha ao remover o anexo");
+      }
+
+      setAttachments((previous) =>
+        previous.filter((item) => item.id !== attachment.id),
+      );
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "Falha ao remover o anexo",
+      );
+    }
   };
 
   const handleUpload = async (
@@ -216,23 +263,36 @@ export default function NoteEditor({
         {attachments.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {attachments.map((attachment) => (
-              <a
+              <div
                 key={attachment.id}
-                href={attachment.url}
-                target="_blank"
-                rel="noreferrer"
-                download={attachment.kind === "file" ? attachment.originalName : undefined}
-                title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground transition hover:text-foreground"
+                className="inline-flex max-w-full items-center rounded-full border border-border bg-card text-xs text-muted-foreground"
               >
-                {attachment.kind === "image" ? (
-                  <ImageIcon width={13} height={13} />
-                ) : (
-                  <FileIcon width={13} height={13} />
-                )}
-                <span className="max-w-40 truncate">{attachment.originalName}</span>
-                <DownloadIcon width={13} height={13} />
-              </a>
+                <a
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={attachment.kind === "file" ? attachment.originalName : undefined}
+                  title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
+                  className="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 transition hover:text-foreground"
+                >
+                  {attachment.kind === "image" ? (
+                    <ImageIcon width={13} height={13} />
+                  ) : (
+                    <FileIcon width={13} height={13} />
+                  )}
+                  <span className="max-w-40 truncate">{attachment.originalName}</span>
+                  <DownloadIcon width={13} height={13} />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveAttachment(attachment)}
+                  title="Remover anexo"
+                  aria-label={`Remover ${attachment.originalName}`}
+                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-muted hover:text-danger"
+                >
+                  <XIcon width={12} height={12} />
+                </button>
+              </div>
             ))}
           </div>
         )}

@@ -132,6 +132,12 @@ export const TrashIcon = (props: IconProps) => (
   </Base>
 );
 
+export const XIcon = (props: IconProps) => (
+  <Base {...props}>
+    <path d="m6 6 12 12M18 6 6 18" />
+  </Base>
+);
+
 export const PlusIcon = (props: IconProps) => (
   <Base {...props}>
     <path d="M12 5v14M5 12h14" />

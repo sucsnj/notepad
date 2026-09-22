@@ -26,6 +26,14 @@ export interface EditorToolbarProps {
   onPickFile: () => void;
 }
 
+const lineHeightOptions = [
+  { value: "0.75", label: "Padrão" },
+  { value: "0.5", label: "Compacto" },
+  { value: "0.9", label: "Normal" },
+  { value: "1.0", label: "Amplo" },
+  { value: "1.5", label: "Duplo" },
+] as const;
+
 interface ToolbarButtonProps {
   active?: boolean;
   disabled?: boolean;
@@ -85,6 +93,10 @@ export default function EditorToolbar({
       blockquote: instance?.isActive("blockquote") ?? false,
       code: instance?.isActive("code") ?? false,
       link: instance?.isActive("link") ?? false,
+      lineHeight:
+        (instance?.getAttributes("paragraph").lineHeight as string | undefined) ??
+        (instance?.getAttributes("heading").lineHeight as string | undefined) ??
+        "",
       h1: instance?.isActive("heading", { level: 1 }) ?? false,
       h2: instance?.isActive("heading", { level: 2 }) ?? false,
       h3: instance?.isActive("heading", { level: 3 }) ?? false,
@@ -96,6 +108,11 @@ export default function EditorToolbar({
   if (!editor || !state) return null;
 
   const chain = () => editor.chain().focus();
+
+  const setLineHeight = (value: string) => {
+    chain().updateAttributes("paragraph", { lineHeight: value || null }).run();
+    chain().updateAttributes("heading", { lineHeight: value || null }).run();
+  };
 
   const handleLink = () => {
     const previous = (editor.getAttributes("link").href as string | undefined) ?? "";
@@ -158,6 +175,24 @@ export default function EditorToolbar({
       <ToolbarButton active={state.code} title="Código" onClick={() => chain().toggleCode().run()}>
         <CodeIcon />
       </ToolbarButton>
+
+      <Divider />
+
+      <label className="flex h-8 items-center gap-1.5 px-1 text-xs text-muted-foreground">
+        <span>Linhas</span>
+        <select
+          aria-label="Espaçamento entre linhas"
+          value={state.lineHeight}
+          onChange={(event) => setLineHeight(event.target.value)}
+          className="h-8 rounded-md border border-border bg-background px-1.5 text-xs text-foreground outline-none transition focus:border-accent"
+        >
+          {lineHeightOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <Divider />
 
