@@ -325,7 +325,7 @@ export default function NoteEditor({
         onChange={(event) => handleUpload(event, "file")}
       />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto tabular-nums">
         <EditorContent
           editor={editor}
           className="mx-auto w-full max-w-3xl px-4 py-4"
