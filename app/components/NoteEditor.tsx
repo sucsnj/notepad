@@ -223,85 +223,87 @@ export default function NoteEditor({
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <button
-          type="button"
-          onClick={onBack}
-          title="Voltar para a lista"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:hidden"
-        >
-          <ChevronLeftIcon />
-        </button>
+        <div className="shrink-0 px-4 pb-2 pt-3 md:w-[70%]">
+          <input
+            value={title}
+            onChange={handleTitleChange}
+            placeholder="Título da anotação"
+            className="w-full bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/60"
+          />
 
-        <span
-          className={cn(
-            "text-xs",
-            status === "error" ? "text-danger" : "text-muted-foreground",
+          {attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {attachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="inline-flex max-w-full items-center rounded-full border border-border bg-card text-xs text-muted-foreground"
+                >
+                  <a
+                    href={attachment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={attachment.kind === "file" ? attachment.originalName : undefined}
+                    title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
+                    className="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 transition hover:text-foreground"
+                  >
+                    {attachment.kind === "image" ? (
+                      <ImageIcon width={13} height={13} />
+                    ) : (
+                      <FileIcon width={13} height={13} />
+                    )}
+                    <span className="max-w-40 truncate">{attachment.originalName}</span>
+                    <DownloadIcon width={13} height={13} />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(attachment)}
+                    title="Remover anexo"
+                    aria-label={`Remover ${attachment.originalName}`}
+                    className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-muted hover:text-danger"
+                  >
+                    <XIcon width={12} height={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
-        >
-          {statusLabel[status] ||
-            (note.updatedAt ? `Editado em ${formatDateTime(note.updatedAt)}` : "")}
-        </span>
 
-        <button
-          type="button"
-          onClick={onDelete}
-          title="Excluir anotação"
-          className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-danger"
-        >
-          <TrashIcon />
-        </button>
+          {uploadError && (
+            <p className="mt-2 text-xs text-danger">{uploadError}</p>
+          )}
+        </div>
+          
+        <div className="ml-auto flex w-auto md:w-[30%] shrink-0 items-center gap-2 px-2 py-2">
+          <button
+            type="button"
+            onClick={onBack}
+            title="Voltar para a lista"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:hidden"
+          >
+            <ChevronLeftIcon />
+          </button>
+
+          <span
+            className={cn(
+              "text-xs",
+              status === "error" ? "text-danger" : "text-muted-foreground",
+            )}
+          >
+            {statusLabel[status] ||
+              (note.updatedAt ? `Editado em ${formatDateTime(note.updatedAt)}` : "")}
+          </span>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Excluir anotação"
+            className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-danger"
+          >
+            <TrashIcon />
+          </button>
+        </div>
+
       </header>
-
-      <div className="shrink-0 px-4 pb-2 pt-3">
-        <input
-          value={title}
-          onChange={handleTitleChange}
-          placeholder="Título da anotação"
-          className="w-full bg-transparent text-2xl font-semibold outline-none placeholder:text-muted-foreground/60"
-        />
-
-        {attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {attachments.map((attachment) => (
-              <div
-                key={attachment.id}
-                className="inline-flex max-w-full items-center rounded-full border border-border bg-card text-xs text-muted-foreground"
-              >
-                <a
-                  href={attachment.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  download={attachment.kind === "file" ? attachment.originalName : undefined}
-                  title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
-                  className="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 transition hover:text-foreground"
-                >
-                  {attachment.kind === "image" ? (
-                    <ImageIcon width={13} height={13} />
-                  ) : (
-                    <FileIcon width={13} height={13} />
-                  )}
-                  <span className="max-w-40 truncate">{attachment.originalName}</span>
-                  <DownloadIcon width={13} height={13} />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveAttachment(attachment)}
-                  title="Remover anexo"
-                  aria-label={`Remover ${attachment.originalName}`}
-                  className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-muted hover:text-danger"
-                >
-                  <XIcon width={12} height={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {uploadError && (
-          <p className="mt-2 text-xs text-danger">{uploadError}</p>
-        )}
-      </div>
-
       <EditorToolbar
         editor={editor}
         uploading={uploading}
