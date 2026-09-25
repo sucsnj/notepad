@@ -61,10 +61,20 @@
 
 @layer components {
   .editor-content {
+    padding-bottom: 22vh !important;
+    font-variant-numeric: tabular-nums;
     min-height: 100%;
     outline: none;
     font-size: 1rem;
     line-height: 1.5;
+  }
+
+  .editor-content p,
+  .editor-content h1,
+  .editor-content h2,
+  .editor-content h3,
+  .editor-content li {
+    scroll-margin-bottom: 25vh;
   }
 
   .editor-content > * + * {

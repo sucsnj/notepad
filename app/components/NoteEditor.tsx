@@ -122,6 +122,17 @@ export default function NoteEditor({
         textContent: instance.getText(),
       });
     },
+    onSelectionUpdate: ({ editor: instance }) => {
+      const { selection } = instance.state;
+      const domNode = instance.view.nodeDOM(selection.from) as HTMLElement
+      || instance.view.domAtPos(selection.from).node as HTMLElement;
+
+      const element = domNode?.nodeType === 1 ? domNode : domNode?.parentElement;
+
+      if (element && typeof element.scrollIntoView === "function") {
+        element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
   });
 
   const handleTitleChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -325,7 +336,7 @@ export default function NoteEditor({
         onChange={(event) => handleUpload(event, "file")}
       />
 
-      <div className="flex-1 overflow-y-auto tabular-nums">
+      <div className="flex-1 overflow-y-auto">
         <EditorContent
           editor={editor}
           className="mx-auto w-full max-w-3xl px-4 py-4"
