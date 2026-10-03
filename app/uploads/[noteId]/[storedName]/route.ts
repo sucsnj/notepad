@@ -15,7 +15,10 @@ export async function GET(_request: Request, context: RouteContext) {
   if (noteId === null) return new Response("Not found", { status: 404 });
 
   const attachment = findAttachmentFile(noteId, storedName);
-  if (!attachment) return new Response("Not found", { status: 404 });
+  if (!attachment) {
+    console.warn(`[uploads] Attachment metadata not found for note ${noteId}`);
+    return new Response("Not found", { status: 404 });
+  }
 
   try {
     const file = await readFile(attachment.filePath);
@@ -32,6 +35,7 @@ export async function GET(_request: Request, context: RouteContext) {
     });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      console.warn(`[uploads] Stored file missing for note ${noteId}`);
       return new Response("Not found", { status: 404 });
     }
     console.error("Falha ao ler anexo", error);
