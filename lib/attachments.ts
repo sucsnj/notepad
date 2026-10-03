@@ -37,6 +37,26 @@ export function listAttachments(noteId: number): Attachment[] {
   return rows.map(mapAttachment);
 }
 
+export function findAttachmentFile(noteId: number, storedName: string) {
+  if (path.basename(storedName) !== storedName) return null;
+
+  const row = getDb()
+    .prepare("SELECT * FROM files WHERE note_id = ? AND stored_name = ?")
+    .get(noteId, storedName) as unknown as FileRow | undefined;
+
+  if (!row) return null;
+
+  const root = path.resolve(uploadDir);
+  const filePath = path.resolve(root, String(noteId), row.stored_name);
+  if (!filePath.startsWith(root + path.sep)) return null;
+
+  return {
+    filePath,
+    mimeType: row.mime_type,
+    originalName: row.original_name,
+  };
+}
+
 export function insertAttachment(input: {
   noteId: number;
   originalName: string;

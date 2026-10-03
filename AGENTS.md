@@ -23,8 +23,9 @@ Bloco de notas online (SPA): Next.js App Router + TypeScript, Tailwind CSS v4, S
 - TipTap v3: `StarterKit` já inclui Link/Underline; `Image` é extensão separada; `Placeholder` vem de `@tiptap/extensions`. `useEditor` usa `immediatelyRender: false` (SSR). Lint React 19 proíbe `setState` em effect refs durante render (ex.: `ThemeToggle` usa `useSyncExternalStore`).
 
 ## Banco e arquivos
-- SQLite via módulo nativo `node:sqlite` (`DatabaseSync`) em `data/notepad.db` (WAL, FK). Esquema e singleton (globalThis, sobrevive HMR) em `lib/db.ts`; `data/` é ignorado pelo git.
-- Anexos ficam em `public/uploads/<noteId>/<storedName>` com metadados na tabela `files` (tabela `notes` guarda `content` HTML + `text_content` para busca LIKE em `lib/notes.ts`). `public/uploads/*` é ignorado exceto `.gitkeep`.
+- SQLite via módulo nativo `node:sqlite` (`DatabaseSync`) em `data/notepad.db` (WAL, FK). Esquema e singleton (globalThis, sobrevive HMR) em `lib/db.ts`; `data/` é ignorado pelo git. O caminho pode ser alterado com `DATABASE_PATH`.
+- Anexos ficam em `public/uploads/<noteId>/<storedName>` por padrão, com metadados na tabela `files` (tabela `notes` guarda `content` HTML + `text_content` para busca LIKE em `lib/notes.ts`). `UPLOAD_DIR` pode alterar o diretório; caminhos relativos partem da raiz do projeto.
+- Anexos são servidos em runtime por `app/uploads/[noteId]/[storedName]/route.ts`, validados pelos metadados no SQLite. Não dependem do manifesto de arquivos estáticos do build. Em produção, banco e uploads devem usar volumes persistentes acessíveis pelo processo da aplicação; instâncias sem armazenamento compartilhado podem retornar 404. O diretório padrão `public/uploads/` é ignorado pelo git, exceto `.gitkeep`.
 
 ## Acesso pela rede
 - Binding sempre em `0.0.0.0` via `scripts/serve.mjs`: dá acesso por `http://localhost:3000`, IP de LAN e IPs de VPN (Tailscale/Radmin). IPv6 puro (`::1`) não é atendido; navegadores caem para IPv4 automaticamente.

@@ -47,6 +47,9 @@ yarn-error.log*
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# local archive generated when packaging the upload route
+/cod.zip
+
 # vercel
 .vercel
 
