@@ -1,5 +1,9 @@
 import { getDb } from "./db";
-import { listAttachments, removeStoredFile } from "./attachments";
+import {
+  listAttachments,
+  removeStoredFile,
+  rewriteAttachmentUrls,
+} from "./attachments";
 import { htmlToText } from "./text";
 import type { Note, NoteSummary } from "./types";
 
@@ -85,7 +89,7 @@ export function getNote(id: number): Note | null {
   return {
     id: row.id,
     title: row.title,
-    content: row.content,
+    content: rewriteAttachmentUrls(id, row.content),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     attachments: listAttachments(id),

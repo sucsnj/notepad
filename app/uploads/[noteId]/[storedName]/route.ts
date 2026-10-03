@@ -31,6 +31,7 @@ export async function GET(_request: Request, context: RouteContext) {
         "Content-Disposition": `${isImage ? "inline" : "attachment"}; filename*=UTF-8''${safeName}`,
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
+        "X-Upload-Handler": "dynamic-route",
       },
     });
   } catch (error) {

@@ -61,7 +61,7 @@ export async function saveUpload(noteId: number, file: File): Promise<Attachment
     originalName: file.name || storedName,
     storedName,
     mimeType,
-    webPath: `/uploads/${noteId}/${storedName}`,
+    webPath: `/api/attachments/${noteId}/${encodeURIComponent(storedName)}`,
     size: file.size,
     kind,
   });

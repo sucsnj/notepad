@@ -30,8 +30,8 @@ Consulte a [documentação oficial do Next.js](https://nextjs.org/docs) para det
 
 ## Dados e anexos
 
-O banco SQLite fica em `data/notepad.db` por padrão. Uploads ficam em `public/uploads` por padrão; os caminhos podem ser alterados com `DATABASE_PATH` e `UPLOAD_DIR`. Caminhos relativos são resolvidos a partir da raiz do projeto. O limite padrão é 20 MB por arquivo e pode ser alterado com `MAX_UPLOAD_SIZE_MB`.
+O banco SQLite fica em `data/notepad.db` por padrão. Uploads novos ficam em `data/uploads` por padrão, fora da pasta estática do Next.js. Os caminhos podem ser alterados com `DATABASE_PATH` e `UPLOAD_DIR`. Caminhos relativos são resolvidos a partir da raiz do projeto. O limite padrão é 20 MB por arquivo e pode ser alterado com `MAX_UPLOAD_SIZE_MB`.
 
-Os arquivos são armazenados no disco do servidor e seus metadados ficam na tabela `files`. A rota dinâmica `app/uploads/[noteId]/[storedName]/route.ts` valida os anexos no banco e serve os arquivos em runtime, inclusive uploads criados depois do build. O diretório padrão de uploads é ignorado pelo Git.
+Os arquivos são armazenados no disco do servidor e seus metadados ficam na tabela `files`. O endpoint dinâmico `app/api/attachments/[noteId]/[storedName]/route.ts` valida os anexos no banco e serve os arquivos em runtime, inclusive uploads criados depois do build. Anexos antigos em `public/uploads` continuam sendo lidos como compatibilidade. O diretório `data/` é ignorado pelo Git.
 
 Em produção, configure `DATABASE_PATH` e `UPLOAD_DIR` para volumes persistentes. O processo que recebe o upload precisa acessar os mesmos arquivos e banco ao servir o anexo; armazenamento efêmero ou múltiplas instâncias sem volume compartilhado podem causar perda de dados ou respostas 404. Para ambientes serverless, use armazenamento de arquivos externo.

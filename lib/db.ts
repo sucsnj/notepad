@@ -11,7 +11,7 @@ const databaseFile = path.resolve(
 export const uploadDir = path.resolve(
   /* turbopackIgnore: true */
   process.cwd(),
-  process.env.UPLOAD_DIR ?? path.join("public", "uploads"),
+  process.env.UPLOAD_DIR ?? path.join("data", "uploads"),
 );
 
 export const maxUploadBytes =
