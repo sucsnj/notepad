@@ -13,7 +13,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 Bloco de notas online (SPA): Next.js App Router + TypeScript, Tailwind CSS v4, SQLite via `node:sqlite` (módulo nativo do Node, sem dependência C++), editor TipTap v3. UI cliente/idioma: pt-BR.
 
 ## Commands
-- `npm run dev` / `npm start` — rodam via `scripts/serve.mjs`, que lê `PORT` do `.env` e executa `next dev|start -H <host> -p <port>`. O script injeta `--experimental-sqlite` quando o Node é `< 23` (necessário para o `node:sqlite`). **Nunca** chame `next dev`/`next start` direto: além do `-H 0.0.0.0`, o flag do SQLite tem que ser repassado.
+- `npm run dev` / `npm run build` / `npm start` — todos passam por `scripts/serve.mjs`, que lê `PORT` do `.env` (dev/start), exige **Node ≥ 22.5** (aborta com mensagem clara se menor) e injeta `--experimental-sqlite` quando o Node é `< 23`. **Nunca** chame `next dev`/`next build`/`next start` direto: além do `-H 0.0.0.0` e do build, o flag do SQLite tem que ser repassado.
 - `npm run typecheck` (`tsc --noEmit`), `npm run lint` (eslint), `npm run build` — validar antes de concluir qualquer tarefa.
 - `powershell -ExecutionPolicy Bypass -File scripts/firewall.ps1` (como Administrador) — abre a porta do app no Firewall do Windows para acesso de outros dispositivos (LAN/Tailscale/Radmin).
 

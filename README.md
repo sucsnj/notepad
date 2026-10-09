@@ -2,8 +2,18 @@ Aplicação de anotações em pt-BR feita com Next.js App Router, TypeScript, Ta
 
 ## Requisitos
 
-- Node.js 23 ou superior recomendado. O projeto usa o módulo integrado `node:sqlite`.
+- Node.js **22.5 ou superior** (obrigatório — o projeto usa o módulo integrado `node:sqlite`). Node **23+** recomendado; em Node 22.5–22.12 o script injeta automaticamente o flag `--experimental-sqlite`.
 - npm.
+
+## Configuração
+
+O app funciona sem nenhuma configuração. Opcionalmente, copie `.env.example` para `.env` e ajuste as variáveis:
+
+```bash
+cp .env.example .env   # ou: Copy-Item .env.example .env
+```
+
+As mesmas configurações dos servidores de desenvolvimento e produção são lidas do ambiente ou do `.env`.
 
 ## Desenvolvimento
 
@@ -22,7 +32,7 @@ npm run build
 npm start
 ```
 
-Use `npm run typecheck` e `npm run lint` para validar alterações.
+`npm run build` e `npm start` também passam pelo `scripts/serve.mjs`, que garante o flag do SQLite e o host correto em qualquer máquina. Use `npm run typecheck` e `npm run lint` para validar alterações.
 
 ## Documentação
 
