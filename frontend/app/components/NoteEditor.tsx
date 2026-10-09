@@ -78,6 +78,7 @@ const statusLabel: Record<SaveStatus, string> = {
   pending: "Alterações não salvas",
   saving: "Salvando…",
   saved: "Salvo",
+  queued: "Salvo offline · sincroniza depois",
   error: "Erro ao salvar",
 };
 

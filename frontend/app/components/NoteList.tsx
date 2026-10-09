@@ -76,8 +76,16 @@ export default function NoteList({
                 )}
               >
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm font-medium">
-                    {note.title.trim() || "Sem título"}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {note.pending && (
+                      <span
+                        title="Pendente de sincronização"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                      />
+                    )}
+                    <span className="truncate text-sm font-medium">
+                      {note.title.trim() || "Sem título"}
+                    </span>
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {formatRelative(note.updatedAt)}

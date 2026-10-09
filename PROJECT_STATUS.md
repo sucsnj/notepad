@@ -83,8 +83,10 @@ notepad/
    │  ├─ cn.ts               # helper de className
    │  ├─ format.ts           # datas e bytes (pt-BR)
    │  └─ store/              # cache local offline-first (IndexedDB)
-   │     ├─ db.ts            # abertura/schema do IndexedDB (stores notes/meta)
-   │     └─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
+   │     ├─ db.ts            # schema do IndexedDB (stores notes/meta/outbox)
+   │     ├─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
+   │     ├─ outbox.ts        # fila de operações pendentes (create/update/delete)
+   │     └─ notesRepository.ts # regras de leitura/escrita offline + fusão de listas
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
       ├─ page.tsx            # renderiza <NoteApp/>
@@ -313,7 +315,7 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
-- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapa 1 concluída).
+- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–2 concluídas).
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -353,8 +355,23 @@ texto** (anexos ficam para a Etapa 5). Implementação **por etapas**.
   - Escrita offline (criar/editar/excluir) ainda **não** é suportada — falha
     explicitamente (Etapa 2).
   - Verificado: `typecheck`, `lint` e `build` do frontend verdes.
-- [ ] **Etapa 2 — Escrita offline:** fila persistente (outbox) no IndexedDB;
-  estado otimista; IDs temporários para notas criadas offline; UI marca pendentes.
+- **Etapa 2 — Escrita offline (outbox)** — ✅ concluída
+  - `outbox.ts`: fila persistente de operações (`create`/`update`/`delete`) no
+    IndexedDB, com fusão — um `create` absorve os `update` seguintes e um `delete`
+    cancela o que houver.
+  - `notesRepository.ts`: ponto único de leitura/escrita. Criação/edição/exclusão
+    tentam o backend e, em caso de falha, gravam no cache local (estado otimista)
+    e enfileiram a operação.
+  - Notas criadas offline recebem **ID temporário** (negativo, via contador em
+    `meta`); a exclusão de uma nota temporária apenas limpa a fila.
+  - `mergeSummaries` combina a lista do servidor com o cache: mantém a versão
+    local de notas com pendência e esconde as exclusões pendentes.
+  - UI: ponto (`bg-accent`) na lista para notas pendentes; status "Salvo offline ·
+    sincroniza depois" no editor. Reabrir uma nota com edição pendente usa a
+    cópia local (não é sobrescrita pelo servidor).
+  - A fila **não é drenada automaticamente ainda** — isso é a Etapa 3. Enquanto
+    houver pendências, ao reconectar o servidor não é atualizado por elas.
+  - Typecheck/lint/build do frontend verdes; smoke dos dois servidores ok.
 - [ ] **Etapa 3 — Sincronização:** drenar a outbox ao reconectar (evento
   `online`, foco, intervalo), reconciliar IDs temporários → reais, com retry.
 - [ ] **Etapa 4 — Conflitos / mudanças remotas:** detecção via `updatedAt`/versão;

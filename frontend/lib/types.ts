@@ -27,6 +27,13 @@ export interface NoteSummary {
   attachmentCount: number;
   createdAt: string;
   updatedAt: string;
+  pending?: boolean;
 }
 
-export type SaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
+export type SaveStatus =
+  | "idle"
+  | "pending"
+  | "saving"
+  | "saved"
+  | "queued"
+  | "error";

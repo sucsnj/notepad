@@ -13,6 +13,17 @@ export interface CachedNote {
   full: boolean;
 }
 
+export type OutboxKind = "create" | "update" | "delete";
+
+export interface OutboxOp {
+  id: string;
+  kind: OutboxKind;
+  noteId: number;
+  title?: string;
+  content?: string;
+  createdAt: string;
+}
+
 interface NotepadDB extends DBSchema {
   notes: {
     key: number;
@@ -22,10 +33,14 @@ interface NotepadDB extends DBSchema {
     key: string;
     value: unknown;
   };
+  outbox: {
+    key: string;
+    value: OutboxOp;
+  };
 }
 
 const DB_NAME = "notepad";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<NotepadDB>> | null = null;
 
@@ -37,8 +52,15 @@ export function getDB(): Promise<IDBPDatabase<NotepadDB>> {
   if (!dbPromise) {
     dbPromise = openDB<NotepadDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        db.createObjectStore("notes", { keyPath: "id" });
-        db.createObjectStore("meta");
+        if (!db.objectStoreNames.contains("notes")) {
+          db.createObjectStore("notes", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("meta")) {
+          db.createObjectStore("meta");
+        }
+        if (!db.objectStoreNames.contains("outbox")) {
+          db.createObjectStore("outbox", { keyPath: "id" });
+        }
       },
     });
   }

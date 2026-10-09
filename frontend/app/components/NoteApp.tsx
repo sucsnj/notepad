@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Note, NoteSummary, SaveStatus } from "@/lib/types";
+import { cacheSummaries, listCachedSummaries } from "@/lib/store/notesStore";
 import {
-  cacheNote,
-  cacheSummaries,
-  getCachedNote,
-  listCachedSummaries,
-} from "@/lib/store/notesStore";
+  createNote as createNoteRecord,
+  getNote as getNoteRecord,
+  markPending,
+  mergeSummaries,
+  removeNote as removeNoteRecord,
+  saveNote,
+} from "@/lib/store/notesRepository";
 import { cn } from "@/lib/cn";
 import NoteList from "./NoteList";
 import NoteEditor, { type EditorChange } from "./NoteEditor";
@@ -40,16 +43,15 @@ export default function NoteApp() {
   }, [query]);
 
   const fetchNotes = useCallback(async (search: string) => {
-    let hadCache = false;
+    let cached: NoteSummary[] = [];
     try {
-      const cached = await listCachedSummaries(search);
-      hadCache = cached.length > 0;
-      setNotes(cached);
+      cached = await listCachedSummaries(search);
+      setNotes(await markPending(cached));
     } catch {
       // cache indisponível; segue para a rede
     }
 
-    if (!hadCache) setLoadingList(true);
+    if (cached.length === 0) setLoadingList(true);
 
     try {
       const response = await fetch(`/api/notes?q=${encodeURIComponent(search)}`, {
@@ -57,13 +59,13 @@ export default function NoteApp() {
       });
       if (!response.ok) throw new Error("Não foi possível carregar as anotações");
       const data = (await response.json()) as { notes: NoteSummary[] };
-      setNotes(data.notes);
+      setNotes(await mergeSummaries(data.notes, cached));
       setError(null);
       setOffline(false);
       void cacheSummaries(data.notes);
     } catch (err) {
       setOffline(true);
-      if (!hadCache) {
+      if (cached.length === 0) {
         setError(err instanceof Error ? err.message : "Erro ao carregar");
       }
     } finally {
@@ -97,14 +99,12 @@ export default function NoteApp() {
 
     setStatus("saving");
     try {
-      const response = await fetch(`/api/notes/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+      const outcome = await saveNote(id, {
+        title: draft.title,
+        content: draft.content,
       });
-      if (!response.ok) throw new Error("Falha ao salvar");
       lastSavedRef.current = snapshot;
-      setStatus("saved");
+      setStatus(outcome.queued ? "queued" : "saved");
       void fetchNotes(queryRef.current);
     } catch {
       setStatus("error");
@@ -135,36 +135,17 @@ export default function NoteApp() {
       setMobileView("editor");
 
       try {
-        const response = await fetch(`/api/notes/${id}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("Não foi possível abrir a anotação");
-        const data = (await response.json()) as { note: Note };
-
-        applyNote(data.note);
-        setError(null);
-        setOffline(false);
-        void cacheNote(data.note);
-      } catch {
-        // Sem backend: tenta a cópia local salva no navegador.
-        try {
-          const cached = await getCachedNote(id);
-          if (cached?.full && cached.content !== null) {
-            applyNote({
-              id: cached.id,
-              title: cached.title,
-              content: cached.content,
-              createdAt: cached.createdAt,
-              updatedAt: cached.updatedAt,
-              attachments: cached.attachments,
-            });
-            setOffline(true);
-          } else {
-            setOffline(true);
-            setError("Sem conexão — esta anotação ainda não está disponível offline");
-          }
-        } catch {
+        const result = await getNoteRecord(id);
+        if (result) {
+          applyNote(result.note);
+          setError(null);
+          setOffline(result.offline);
+        } else {
           setOffline(true);
-          setError("Não foi possível abrir a anotação");
+          setError("Sem conexão — esta anotação ainda não está disponível offline");
         }
+      } catch {
+        setError("Não foi possível abrir a anotação");
       } finally {
         setLoadingNote(false);
       }
@@ -213,13 +194,7 @@ export default function NoteApp() {
     await flushSave();
 
     try {
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "", content: "", textContent: "" }),
-      });
-      if (!response.ok) throw new Error("Não foi possível criar a anotação");
-      const data = (await response.json()) as { note: Note };
+      const { note, queued } = await createNoteRecord();
 
       if (query) {
         setQuery("");
@@ -227,12 +202,12 @@ export default function NoteApp() {
         void fetchNotes("");
       }
 
-      setActiveNote(data.note);
-      setActiveId(data.note.id);
-      activeIdRef.current = data.note.id;
+      setActiveNote(note);
+      setActiveId(note.id);
+      activeIdRef.current = note.id;
       draftRef.current = { title: "", content: "", textContent: "" };
       lastSavedRef.current = JSON.stringify({ title: "", content: "" });
-      setStatus("idle");
+      setStatus(queued ? "queued" : "idle");
       setMobileView("editor");
       setError(null);
     } catch (err) {
@@ -253,8 +228,7 @@ export default function NoteApp() {
     }
 
     try {
-      const response = await fetch(`/api/notes/${id}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Não foi possível excluir");
+      await removeNoteRecord(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao excluir");
       return;
