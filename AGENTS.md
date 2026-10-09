@@ -93,6 +93,9 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
   `Math.max(valor, 1)` no `renderHTML` para sanear notas antigas.
 - `NoteApp.tsx` gerencia estado, busca (debounce 250 ms) e autosave
   (debounce 800 ms via `PATCH`).
+- Offline-first (em andamento): `frontend/lib/store/` mantém cache local em
+  **IndexedDB** (`idb`); a lista é cache-first e há indicador "Sem conexão".
+  Escrita offline/outbox ainda é etapa futura — ver `PROJECT_STATUS.md` seção 9.
 
 ## Acesso pela rede
 

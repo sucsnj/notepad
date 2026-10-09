@@ -81,7 +81,10 @@ notepad/
    ├─ lib/
    │  ├─ types.ts            # tipos espelhados do backend (client-side)
    │  ├─ cn.ts               # helper de className
-   │  └─ format.ts           # datas e bytes (pt-BR)
+   │  ├─ format.ts           # datas e bytes (pt-BR)
+   │  └─ store/              # cache local offline-first (IndexedDB)
+   │     ├─ db.ts            # abertura/schema do IndexedDB (stores notes/meta)
+   │     └─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
       ├─ page.tsx            # renderiza <NoteApp/>
@@ -310,6 +313,7 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
+- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapa 1 concluída).
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -327,3 +331,34 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 - Em produção, `DATABASE_PATH` e `UPLOAD_DIR` devem apontar para volumes
   persistentes; o processo que serve o anexo precisa acessar os mesmos arquivos
   e banco.
+
+---
+
+## 9. Offline-first (roadmap)
+
+Objetivo: o app deve **funcionar sem o backend**, carregando do cache local,
+guardando alterações para sincronizar depois e avisando sobre mudanças remotas.
+Armazenamento escolhido: **IndexedDB** (via `idb`). Escopo inicial: **notas de
+texto** (anexos ficam para a Etapa 5). Implementação **por etapas**.
+
+- **Etapa 1 — Cache de leitura + indicador de conexão** — ✅ concluída
+  - Camada `frontend/lib/store/`: `db.ts` (IndexedDB `notepad`, stores `notes`
+  e `meta`) e `notesStore.ts` (cache/leitura/busca/meta, com `htmlToText`
+  espelhando o backend para gerar a prévia).
+  - `NoteApp` passa a ser **cache-first** na lista: mostra o cache local
+    imediatamente e, em paralelo, busca no backend e atualiza o cache.
+  - Abrir nota: tenta o backend; se indisponível, usa a cópia completa local.
+  - Indicador **"Sem conexão"** na barra lateral + evento `online/offline` do
+    navegador (ao reconectar, recarrega a lista).
+  - Escrita offline (criar/editar/excluir) ainda **não** é suportada — falha
+    explicitamente (Etapa 2).
+  - Verificado: `typecheck`, `lint` e `build` do frontend verdes.
+- [ ] **Etapa 2 — Escrita offline:** fila persistente (outbox) no IndexedDB;
+  estado otimista; IDs temporários para notas criadas offline; UI marca pendentes.
+- [ ] **Etapa 3 — Sincronização:** drenar a outbox ao reconectar (evento
+  `online`, foco, intervalo), reconciliar IDs temporários → reais, com retry.
+- [ ] **Etapa 4 — Conflitos / mudanças remotas:** detecção via `updatedAt`/versão;
+  mudança remota sem conflito → aplica e notifica; com edição local pendente →
+  o usuário decide (manter local / servidor / ambos).
+- [ ] **Etapa 5 (opcional) — Anexos offline:** blobs no IndexedDB, fila de upload,
+  reescrita de URL ao sincronizar.

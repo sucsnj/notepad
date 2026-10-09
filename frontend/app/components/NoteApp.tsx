@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Note, NoteSummary, SaveStatus } from "@/lib/types";
+import {
+  cacheNote,
+  cacheSummaries,
+  getCachedNote,
+  listCachedSummaries,
+} from "@/lib/store/notesStore";
 import { cn } from "@/lib/cn";
 import NoteList from "./NoteList";
 import NoteEditor, { type EditorChange } from "./NoteEditor";
@@ -21,6 +27,7 @@ export default function NoteApp() {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<MobileView>("list");
+  const [offline, setOffline] = useState(false);
 
   const draftRef = useRef<EditorChange | null>(null);
   const lastSavedRef = useRef("");
@@ -33,7 +40,17 @@ export default function NoteApp() {
   }, [query]);
 
   const fetchNotes = useCallback(async (search: string) => {
-    setLoadingList(true);
+    let hadCache = false;
+    try {
+      const cached = await listCachedSummaries(search);
+      hadCache = cached.length > 0;
+      setNotes(cached);
+    } catch {
+      // cache indisponível; segue para a rede
+    }
+
+    if (!hadCache) setLoadingList(true);
+
     try {
       const response = await fetch(`/api/notes?q=${encodeURIComponent(search)}`, {
         cache: "no-store",
@@ -42,8 +59,13 @@ export default function NoteApp() {
       const data = (await response.json()) as { notes: NoteSummary[] };
       setNotes(data.notes);
       setError(null);
+      setOffline(false);
+      void cacheSummaries(data.notes);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar");
+      setOffline(true);
+      if (!hadCache) {
+        setError(err instanceof Error ? err.message : "Erro ao carregar");
+      }
     } finally {
       setLoadingList(false);
     }
@@ -89,6 +111,20 @@ export default function NoteApp() {
     }
   }, [fetchNotes]);
 
+  const applyNote = useCallback((note: Note) => {
+    setActiveNote(note);
+    draftRef.current = {
+      title: note.title,
+      content: note.content,
+      textContent: "",
+    };
+    lastSavedRef.current = JSON.stringify({
+      title: note.title,
+      content: note.content,
+    });
+    setStatus("idle");
+  }, []);
+
   const openNote = useCallback(
     async (id: number) => {
       await flushSave();
@@ -103,26 +139,52 @@ export default function NoteApp() {
         if (!response.ok) throw new Error("Não foi possível abrir a anotação");
         const data = (await response.json()) as { note: Note };
 
-        setActiveNote(data.note);
-        draftRef.current = {
-          title: data.note.title,
-          content: data.note.content,
-          textContent: "",
-        };
-        lastSavedRef.current = JSON.stringify({
-          title: data.note.title,
-          content: data.note.content,
-        });
-        setStatus("idle");
+        applyNote(data.note);
         setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Erro ao abrir");
+        setOffline(false);
+        void cacheNote(data.note);
+      } catch {
+        // Sem backend: tenta a cópia local salva no navegador.
+        try {
+          const cached = await getCachedNote(id);
+          if (cached?.full && cached.content !== null) {
+            applyNote({
+              id: cached.id,
+              title: cached.title,
+              content: cached.content,
+              createdAt: cached.createdAt,
+              updatedAt: cached.updatedAt,
+              attachments: cached.attachments,
+            });
+            setOffline(true);
+          } else {
+            setOffline(true);
+            setError("Sem conexão — esta anotação ainda não está disponível offline");
+          }
+        } catch {
+          setOffline(true);
+          setError("Não foi possível abrir a anotação");
+        }
       } finally {
         setLoadingNote(false);
       }
     },
-    [flushSave],
+    [flushSave, applyNote],
   );
+
+  useEffect(() => {
+    const handleOnline = () => {
+      void fetchNotes(queryRef.current);
+    };
+    const handleOffline = () => setOffline(true);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [fetchNotes]);
 
   const handleChange = useCallback(
     (change: EditorChange) => {
@@ -229,6 +291,7 @@ export default function NoteApp() {
           onCreate={createNote}
           activeId={activeId}
           loading={loadingList}
+          offline={offline}
         />
       </div>
 

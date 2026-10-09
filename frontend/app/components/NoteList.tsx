@@ -14,6 +14,7 @@ export interface NoteListProps {
   onCreate: () => void;
   activeId: number | null;
   loading: boolean;
+  offline?: boolean;
 }
 
 export default function NoteList({
@@ -24,6 +25,7 @@ export default function NoteList({
   onCreate,
   activeId,
   loading,
+  offline = false,
 }: NoteListProps) {
   return (
     <aside className="flex h-full w-full flex-col border-r border-border bg-card">
@@ -95,6 +97,13 @@ export default function NoteList({
           })
         )}
       </div>
+
+      {offline && (
+        <div className="flex items-center gap-2 border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />
+          Sem conexão · exibindo dados salvos no navegador
+        </div>
+      )}
     </aside>
   );
 }
