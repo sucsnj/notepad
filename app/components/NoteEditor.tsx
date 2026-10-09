@@ -49,10 +49,12 @@ const extensions = [
             lineHeight: {
               default: null,
               parseHTML: (element) => element.style.lineHeight || null,
-              renderHTML: (attributes) =>
-                attributes.lineHeight
-                  ? { style: `line-height: ${attributes.lineHeight}` }
-                  : {},
+              renderHTML: (attributes) => {
+                if (!attributes.lineHeight) return {};
+                const parsed = Number.parseFloat(String(attributes.lineHeight));
+                if (!Number.isFinite(parsed)) return {};
+                return { style: `line-height: ${Math.max(parsed, 1)}` };
+              },
             },
           },
         },

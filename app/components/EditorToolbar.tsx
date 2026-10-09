@@ -27,11 +27,11 @@ export interface EditorToolbarProps {
 }
 
 const lineHeightOptions = [
-  { value: "0.75", label: "Padrão" },
-  { value: "0.5", label: "Compacto" },
-  { value: "0.9", label: "Normal" },
-  { value: "1.0", label: "Amplo" },
-  { value: "1.5", label: "Duplo" },
+  { value: "", label: "Padrão" },
+  { value: "1", label: "Compacto" },
+  { value: "1.1", label: "Normal" },
+  { value: "1.4", label: "Amplo" },
+  { value: "1.8", label: "Duplo" },
 ] as const;
 
 interface ToolbarButtonProps {
