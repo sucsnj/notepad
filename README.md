@@ -1,47 +1,56 @@
-Aplicação de anotações em pt-BR feita com Next.js App Router, TypeScript, Tailwind CSS, TipTap e SQLite.
+# Bloco de Notas
+
+Aplicação de anotações em pt-BR, separada em **dois projetos independentes** que rodam em processos distintos:
+
+- **`frontend/`** — Next.js (App Router) + TypeScript + Tailwind CSS v4 + TipTap v3 (SPA).
+- **`backend/`** — API standalone em Fastify + SQLite via `node:sqlite`.
+
+O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (configurável por `BACKEND_URL`), então as chamadas do cliente permanecem em mesma origem (sem necessidade de CORS).
 
 ## Requisitos
 
-- Node.js **22.5 ou superior** (obrigatório — o projeto usa o módulo integrado `node:sqlite`). Node **23+** recomendado; em Node 22.5–22.12 o script injeta automaticamente o flag `--experimental-sqlite`.
+- Node.js **22.5 ou superior** (o backend usa o módulo nativo `node:sqlite`). Node 23+ recomendado; em Node 22.5–22.12 o script injeta automaticamente o flag `--experimental-sqlite`.
 - npm.
 
-## Configuração
+## Backend
 
-O app funciona sem nenhuma configuração. Opcionalmente, copie `.env.example` para `.env` e ajuste as variáveis:
-
-```bash
-cp .env.example .env   # ou: Copy-Item .env.example .env
+```powershell
+cd backend
+npm install
+Copy-Item .env.example .env   # opcional
+npm run dev                   # http://localhost:3001
 ```
 
-As mesmas configurações dos servidores de desenvolvimento e produção são lidas do ambiente ou do `.env`.
+- `npm run dev` — sobe o Fastify com reload (via `tsx`).
+- `npm start` — mesmo servidor, sem watch.
+- `npm run typecheck` — valida os tipos.
 
-## Desenvolvimento
+Variáveis (`.env`): `PORT` (3001), `HOST` (0.0.0.0), `DATABASE_PATH` (`./data/notepad.db`), `UPLOAD_DIR` (`./data/uploads`), `MAX_UPLOAD_SIZE_MB` (20), `CORS_ORIGIN`.
 
-Instale as dependências e inicie o servidor de desenvolvimento:
+## Frontend
 
-```bash
-npm run dev
+```powershell
+cd frontend
+npm install
+Copy-Item .env.example .env   # opcional
+npm run dev                   # http://localhost:3000
 ```
 
-O servidor fica disponível em [http://localhost:3000](http://localhost:3000) por padrão. O script `scripts/serve.mjs` também lê `PORT` do ambiente ou do `.env` e configura o host para acesso pela rede.
+- `npm run dev` / `npm run build` / `npm start` — passam por `scripts/serve.mjs` (lê `PORT` do `.env`, bind em `0.0.0.0`).
+- `npm run lint`, `npm run typecheck`.
 
-## Produção
-
-```bash
-npm run build
-npm start
-```
-
-`npm run build` e `npm start` também passam pelo `scripts/serve.mjs`, que garante o flag do SQLite e o host correto em qualquer máquina. Use `npm run typecheck` e `npm run lint` para validar alterações.
-
-## Documentação
-
-Consulte a [documentação oficial do Next.js](https://nextjs.org/docs) para detalhes do framework.
+Variáveis (`.env`): `PORT` (3000), `BACKEND_URL` (`http://127.0.0.1:3001`), `ALLOWED_DEV_ORIGINS`.
 
 ## Dados e anexos
 
-O banco SQLite fica em `data/notepad.db` por padrão. Uploads novos ficam em `data/uploads` por padrão, fora da pasta estática do Next.js. Os caminhos podem ser alterados com `DATABASE_PATH` e `UPLOAD_DIR`. Caminhos relativos são resolvidos a partir da raiz do projeto. O limite padrão é 20 MB por arquivo e pode ser alterado com `MAX_UPLOAD_SIZE_MB`.
+O banco SQLite fica em `backend/data/notepad.db` e os uploads novos em `backend/data/uploads` (ambos ignorados pelo Git). Os caminhos podem ser alterados com `DATABASE_PATH` e `UPLOAD_DIR`. O endpoint dinâmico `GET /api/attachments/:noteId/:storedName` valida os anexos no banco e os serve em runtime; URLs legadas em `/uploads/...` continuam válidas.
 
-Os arquivos são armazenados no disco do servidor e seus metadados ficam na tabela `files`. O endpoint dinâmico `app/api/attachments/[noteId]/[storedName]/route.ts` valida os anexos no banco e serve os arquivos em runtime, inclusive uploads criados depois do build. Anexos antigos em `public/uploads` continuam sendo lidos como compatibilidade. O diretório `data/` é ignorado pelo Git.
+Em produção, use volumes persistentes para `DATABASE_PATH` e `UPLOAD_DIR`, aponte `BACKEND_URL` do frontend para o backend e exponha cada processo na porta desejada.
 
-Em produção, configure `DATABASE_PATH` e `UPLOAD_DIR` para volumes persistentes. O processo que recebe o upload precisa acessar os mesmos arquivos e banco ao servir o anexo; armazenamento efêmero ou múltiplas instâncias sem volume compartilhado podem causar perda de dados ou respostas 404. Para ambientes serverless, use armazenamento de arquivos externo.
+## Acesso pela rede
+
+Os dois servidores fazem bind em `0.0.0.0` (LAN/Tailscale/Radmin). Para liberar a porta no Firewall do Windows (executar como Administrador):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File frontend/scripts/firewall.ps1
+```

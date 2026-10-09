@@ -1,0 +1,22 @@
+# dependencies
+/node_modules
+
+# env files (keep the example committed)
+.env*
+!.env.example
+
+# database (SQLite)
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# uploads legados (mantem o placeholder)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# typescript
+*.tsbuildinfo

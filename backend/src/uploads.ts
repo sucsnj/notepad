@@ -29,14 +29,25 @@ function sanitizeFileName(name: string): string {
   return base || "arquivo";
 }
 
-export async function saveUpload(noteId: number, file: File): Promise<Attachment> {
+export interface UploadFile {
+  filename: string;
+  mimetype: string;
+  buffer: Buffer;
+}
+
+export async function saveUpload(
+  noteId: number,
+  file: UploadFile,
+): Promise<Attachment> {
   if (!getNote(noteId)) {
     throw new UploadError("Anotação não encontrada", 404);
   }
-  if (file.size === 0) {
+
+  const size = file.buffer.length;
+  if (size === 0) {
     throw new UploadError("O arquivo enviado está vazio");
   }
-  if (file.size > maxUploadBytes) {
+  if (size > maxUploadBytes) {
     throw new UploadError(
       `O arquivo excede o limite de ${Math.round(maxUploadBytes / (1024 * 1024))} MB`,
       413,
@@ -46,23 +57,23 @@ export async function saveUpload(noteId: number, file: File): Promise<Attachment
   const directory = path.join(uploadDir, String(noteId));
   fs.mkdirSync(directory, { recursive: true });
 
+  const originalName = file.filename || "arquivo";
   const storedName = `${Date.now()}-${randomBytes(4).toString("hex")}-${sanitizeFileName(
-    file.name,
+    originalName,
   )}`;
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(directory, storedName), bytes);
+  fs.writeFileSync(path.join(directory, storedName), file.buffer);
 
-  const mimeType = file.type || "application/octet-stream";
+  const mimeType = file.mimetype || "application/octet-stream";
   const kind: AttachmentKind = mimeType.startsWith("image/") ? "image" : "file";
 
   return insertAttachment({
     noteId,
-    originalName: file.name || storedName,
+    originalName,
     storedName,
     mimeType,
     webPath: `/api/attachments/${noteId}/${encodeURIComponent(storedName)}`,
-    size: file.size,
+    size,
     kind,
   });
 }

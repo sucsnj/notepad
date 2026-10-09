@@ -1,27 +1,19 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# dependencies (ignoradas por frontend/.gitignore e backend/.gitignore)
+node_modules/
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# build artifacts (rodando a partir de cada pasta)
+.next/
+next-env.d.ts
+*.tsbuildinfo
 
-# testing
-/coverage
-
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# env files
+.env
+.env.*
+!.env.example
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -30,29 +22,5 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (keep the example committed)
-.env*
-!.env.example
-
-# database (SQLite)
-/data/
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
-
-# uploads (runtime files, keep the folder placeholder)
-/public/uploads/*
-!/public/uploads/.gitkeep
-
-# local archive generated when packaging the upload route
-/cod.zip
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# editors
+.idea/
