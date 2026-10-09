@@ -132,3 +132,22 @@ export async function getMeta<T>(key: string): Promise<T | undefined> {
   const db = await getDB();
   return (await db.get("meta", key)) as T | undefined;
 }
+
+type IdMap = Record<string, number>;
+
+export async function setIdMapping(
+  tempId: number,
+  realId: number,
+): Promise<void> {
+  const db = await getDB();
+  const map = ((await db.get("meta", "idMap")) as IdMap | undefined) ?? {};
+  map[String(tempId)] = realId;
+  await db.put("meta", map, "idMap");
+}
+
+export async function resolveId(id: number): Promise<number> {
+  if (id >= 0) return id;
+  const db = await getDB();
+  const map = ((await db.get("meta", "idMap")) as IdMap | undefined) ?? {};
+  return map[String(id)] ?? id;
+}

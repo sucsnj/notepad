@@ -11,6 +11,7 @@ import {
   removeNote as removeNoteRecord,
   saveNote,
 } from "@/lib/store/notesRepository";
+import { flushOutbox } from "@/lib/store/sync";
 import { cn } from "@/lib/cn";
 import NoteList from "./NoteList";
 import NoteEditor, { type EditorChange } from "./NoteEditor";
@@ -72,6 +73,21 @@ export default function NoteApp() {
       setLoadingList(false);
     }
   }, []);
+
+  const syncNow = useCallback(async () => {
+    try {
+      const result = await flushOutbox();
+      const currentId = activeIdRef.current;
+      if (currentId !== null && result.reconciled.has(currentId)) {
+        const realId = result.reconciled.get(currentId) as number;
+        setActiveId(realId);
+        activeIdRef.current = realId;
+      }
+    } catch {
+      // ignora; os gatilhos tentam de novo
+    }
+    void fetchNotes(queryRef.current);
+  }, [fetchNotes]);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -155,7 +171,7 @@ export default function NoteApp() {
 
   useEffect(() => {
     const handleOnline = () => {
-      void fetchNotes(queryRef.current);
+      void syncNow();
     };
     const handleOffline = () => setOffline(true);
 
@@ -165,7 +181,23 @@ export default function NoteApp() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [fetchNotes]);
+  }, [syncNow]);
+
+  useEffect(() => {
+    void syncNow();
+    const interval = setInterval(() => {
+      void syncNow();
+    }, 30000);
+    const handleFocus = () => {
+      void syncNow();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [syncNow]);
 
   const handleChange = useCallback(
     (change: EditorChange) => {

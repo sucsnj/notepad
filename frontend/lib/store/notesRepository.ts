@@ -3,6 +3,7 @@ import {
   deleteCachedNote,
   getCachedNote,
   getMeta,
+  resolveId,
   setMeta,
 } from "./notesStore";
 import { enqueue, pendingKinds, removeOpsForNote } from "./outbox";
@@ -40,9 +41,11 @@ export async function saveNote(
   id: number,
   input: { title: string; content: string },
 ): Promise<SaveOutcome> {
-  if (!isTempId(id)) {
+  const targetId = await resolveId(id);
+
+  if (!isTempId(targetId)) {
     try {
-      const response = await fetch(`/api/notes/${id}`, {
+      const response = await fetch(`/api/notes/${targetId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -50,6 +53,7 @@ export async function saveNote(
       if (response.ok) {
         const data = (await response.json()) as { note: Note };
         await cacheNote(data.note);
+        await removeOpsForNote(targetId);
         await removeOpsForNote(id);
         return { saved: true, queued: false };
       }
@@ -58,10 +62,10 @@ export async function saveNote(
     }
   }
 
-  const cached = await getCachedNote(id);
+  const cached = await getCachedNote(targetId);
   const timestamp = nowSqlite();
   await cacheNote({
-    id,
+    id: targetId,
     title: input.title,
     content: input.content,
     createdAt: cached?.createdAt ?? timestamp,
@@ -70,7 +74,7 @@ export async function saveNote(
   });
   await enqueue({
     kind: "update",
-    noteId: id,
+    noteId: targetId,
     title: input.title,
     content: input.content,
     createdAt: timestamp,
@@ -123,17 +127,21 @@ export async function createNote(): Promise<CreateOutcome> {
 }
 
 export async function removeNote(id: number): Promise<{ queued: boolean }> {
+  const targetId = await resolveId(id);
   await deleteCachedNote(id);
+  if (targetId !== id) await deleteCachedNote(targetId);
 
-  if (isTempId(id)) {
+  if (isTempId(targetId)) {
     // Nunca chegou ao servidor: basta descartar a fila.
     await removeOpsForNote(id);
+    await removeOpsForNote(targetId);
     return { queued: false };
   }
 
   try {
-    const response = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+    const response = await fetch(`/api/notes/${targetId}`, { method: "DELETE" });
     if (response.ok) {
+      await removeOpsForNote(targetId);
       await removeOpsForNote(id);
       return { queued: false };
     }
@@ -141,7 +149,7 @@ export async function removeNote(id: number): Promise<{ queued: boolean }> {
     // sem conexão; enfileira a exclusão
   }
 
-  await enqueue({ kind: "delete", noteId: id, createdAt: nowSqlite() });
+  await enqueue({ kind: "delete", noteId: targetId, createdAt: nowSqlite() });
   return { queued: true };
 }
 
@@ -159,22 +167,23 @@ function cachedToNote(cached: CachedNote): Note {
 export async function getNote(
   id: number,
 ): Promise<{ note: Note; offline: boolean } | null> {
+  const targetId = await resolveId(id);
   const pending = await pendingKinds();
-  const kind = pending.get(id);
+  const kind = pending.get(targetId);
 
   if (kind === "delete") return null;
 
   // Com alteração local pendente, a cópia local é a fonte da verdade.
   if (kind === "create" || kind === "update") {
-    const cached = await getCachedNote(id);
+    const cached = await getCachedNote(targetId);
     if (cached?.full && cached.content !== null) {
       return { note: cachedToNote(cached), offline: false };
     }
   }
 
-  if (!isTempId(id)) {
+  if (!isTempId(targetId)) {
     try {
-      const response = await fetch(`/api/notes/${id}`, { cache: "no-store" });
+      const response = await fetch(`/api/notes/${targetId}`, { cache: "no-store" });
       if (response.ok) {
         const data = (await response.json()) as { note: Note };
         await cacheNote(data.note);
@@ -185,9 +194,9 @@ export async function getNote(
     }
   }
 
-  const cached = await getCachedNote(id);
+  const cached = await getCachedNote(targetId);
   if (cached?.full && cached.content !== null) {
-    return { note: cachedToNote(cached), offline: !isTempId(id) };
+    return { note: cachedToNote(cached), offline: !isTempId(targetId) };
   }
 
   return null;

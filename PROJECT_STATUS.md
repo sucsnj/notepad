@@ -86,7 +86,8 @@ notepad/
    │     ├─ db.ts            # schema do IndexedDB (stores notes/meta/outbox)
    │     ├─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
    │     ├─ outbox.ts        # fila de operações pendentes (create/update/delete)
-   │     └─ notesRepository.ts # regras de leitura/escrita offline + fusão de listas
+   │     ├─ notesRepository.ts # regras de leitura/escrita offline + fusão de listas
+   │     └─ sync.ts          # drenagem da outbox (flushOutbox) + reconciliação
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
       ├─ page.tsx            # renderiza <NoteApp/>
@@ -315,7 +316,7 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
-- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–2 concluídas).
+- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–3 concluídas).
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -369,11 +370,18 @@ texto** (anexos ficam para a Etapa 5). Implementação **por etapas**.
   - UI: ponto (`bg-accent`) na lista para notas pendentes; status "Salvo offline ·
     sincroniza depois" no editor. Reabrir uma nota com edição pendente usa a
     cópia local (não é sobrescrita pelo servidor).
-  - A fila **não é drenada automaticamente ainda** — isso é a Etapa 3. Enquanto
-    houver pendências, ao reconectar o servidor não é atualizado por elas.
   - Typecheck/lint/build do frontend verdes; smoke dos dois servidores ok.
-- [ ] **Etapa 3 — Sincronização:** drenar a outbox ao reconectar (evento
-  `online`, foco, intervalo), reconciliar IDs temporários → reais, com retry.
+- **Etapa 3 — Sincronização (drenar a outbox)** — ✅ concluída
+  - `sync.ts` (`flushOutbox`) drena a fila em ordem, com guarda contra execução
+    concorrente. `create` → `POST` e reconciliação do ID temporário; `update` →
+    `PATCH`; `delete` → `DELETE`. `404` em update/delete descarta a operação;
+    erro de rede (ou 5xx) interrompe e tenta de novo depois.
+  - Mapeamento temporário → real persistido em `meta` (`idMap`); o repositório
+    resolve IDs temporários antes de qualquer operação, evitando operações
+    órfãs a partir de estado obsoleto.
+  - `NoteApp.syncNow()` dispara ao abrir o app, no evento `online`, ao focar a
+    janela e a cada 30 s; ao terminar, atualiza a lista e remapeia a nota aberta.
+  - Typecheck/lint/build do frontend verdes; smoke dos dois servidores ok.
 - [ ] **Etapa 4 — Conflitos / mudanças remotas:** detecção via `updatedAt`/versão;
   mudança remota sem conflito → aplica e notifica; com edição local pendente →
   o usuário decide (manter local / servidor / ambos).

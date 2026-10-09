@@ -95,10 +95,11 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
   (debounce 800 ms via `PATCH`).
 - Offline-first (em andamento): `frontend/lib/store/` mantém cache local em
   **IndexedDB** (`idb`) — `db.ts` (stores `notes`/`meta`/`outbox`), `notesStore.ts`
-  (cache), `outbox.ts` (fila de operações) e `notesRepository.ts` (regras de
-  leitura/escrita offline). A lista é cache-first, há indicador "Sem conexão" e a
-  escrita offline enfileira operações. A fila **ainda não é drenada**
-  automaticamente (Etapa 3) — ver `PROJECT_STATUS.md` seção 9.
+  (cache + mapeamento de IDs), `outbox.ts` (fila), `notesRepository.ts` (regras de
+  leitura/escrita) e `sync.ts` (`flushOutbox`). A lista é cache-first, há
+  indicador "Sem conexão" e a escrita offline enfileira operações. A outbox é
+  drenada em `NoteApp.syncNow()` (abertura, `online`, foco, a cada 30 s). Ver
+  `PROJECT_STATUS.md` seção 9.
 
 ## Acesso pela rede
 
