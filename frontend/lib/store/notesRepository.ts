@@ -3,11 +3,14 @@ import {
   deleteCachedNote,
   getCachedNote,
   getMeta,
+  previewFromContent,
+  putCachedNote,
   resolveId,
   setMeta,
 } from "./notesStore";
 import { enqueue, pendingKinds, removeOpsForNote } from "./outbox";
-import type { CachedNote } from "./db";
+import { getConflict, putConflict, removeConflict } from "./conflicts";
+import type { CachedNote, ConflictRecord } from "./db";
 import type { Note, NoteSummary } from "@/lib/types";
 
 export function isTempId(id: number): boolean {
@@ -45,17 +48,42 @@ export async function saveNote(
 
   if (!isTempId(targetId)) {
     try {
-      const response = await fetch(`/api/notes/${targetId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      if (response.ok) {
-        const data = (await response.json()) as { note: Note };
-        await cacheNote(data.note);
-        await removeOpsForNote(targetId);
-        await removeOpsForNote(id);
-        return { saved: true, queued: false };
+      // Antes de sobrescrever, confere se a nota mudou no servidor desde a
+      // última versão conhecida (conflito detectado no autosave online).
+      const check = await fetch(`/api/notes/${targetId}`, { cache: "no-store" });
+      if (check.status === 404) {
+        // nota não existe mais no servidor; segue para a gravação local
+      } else if (check.ok) {
+        const current = (await check.json()) as { note: Note };
+        const cached = await getCachedNote(targetId);
+        if (
+          cached?.serverUpdatedAt &&
+          cached.serverUpdatedAt !== current.note.updatedAt
+        ) {
+          await putConflict({
+            noteId: targetId,
+            localTitle: input.title,
+            localContent: input.content,
+            serverTitle: current.note.title,
+            serverContent: current.note.content,
+            localUpdatedAt: nowSqlite(),
+            serverUpdatedAt: current.note.updatedAt,
+            detectedAt: nowSqlite(),
+          });
+        } else {
+          const response = await fetch(`/api/notes/${targetId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(input),
+          });
+          if (response.ok) {
+            const data = (await response.json()) as { note: Note };
+            await cacheNote(data.note);
+            await removeOpsForNote(targetId);
+            await removeOpsForNote(id);
+            return { saved: true, queued: false };
+          }
+        }
       }
     } catch {
       // sem conexão; grava localmente e enfileira
@@ -64,13 +92,17 @@ export async function saveNote(
 
   const cached = await getCachedNote(targetId);
   const timestamp = nowSqlite();
-  await cacheNote({
+  await putCachedNote({
     id: targetId,
     title: input.title,
     content: input.content,
+    preview: previewFromContent(input.content),
+    attachmentCount: cached?.attachmentCount ?? 0,
+    attachments: cached?.attachments ?? [],
     createdAt: cached?.createdAt ?? timestamp,
     updatedAt: timestamp,
-    attachments: cached?.attachments ?? [],
+    serverUpdatedAt: cached?.serverUpdatedAt ?? null,
+    full: true,
   });
   await enqueue({
     kind: "update",
@@ -114,7 +146,18 @@ export async function createNote(): Promise<CreateOutcome> {
     updatedAt: timestamp,
     attachments: [],
   };
-  await cacheNote(note);
+  await putCachedNote({
+    id,
+    title: "",
+    content: "",
+    preview: "",
+    attachmentCount: 0,
+    attachments: [],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    serverUpdatedAt: null,
+    full: true,
+  });
   await enqueue({
     kind: "create",
     noteId: id,
@@ -245,4 +288,99 @@ export async function markPending(
   return summaries.map((item) =>
     pending.has(item.id) ? { ...item, pending: true } : item,
   );
+}
+
+export async function pendingNoteIdSet(): Promise<Set<number>> {
+  const pending = await pendingKinds();
+  return new Set(pending.keys());
+}
+
+export type ConflictChoice = "local" | "server" | "both";
+
+// Resolve um conflito de sincronização. "server" descarta a edição local,
+// "local" sobrescreve o servidor com a versão local e "both" cria uma cópia
+// local como nova anotação, mantendo a versão do servidor na original.
+export async function resolveConflict(
+  noteId: number,
+  choice: ConflictChoice,
+): Promise<boolean> {
+  const conflict = await getConflict(noteId);
+  if (!conflict) return true;
+
+  if (choice === "local") {
+    try {
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: conflict.localTitle,
+          content: conflict.localContent,
+        }),
+      });
+      if (!response.ok) return false;
+      const data = (await response.json()) as { note: Note };
+      await cacheNote(data.note);
+    } catch {
+      return false;
+    }
+    await removeOpsForNote(noteId);
+    await removeConflict(noteId);
+    return true;
+  }
+
+  if (choice === "server") {
+    await removeOpsForNote(noteId);
+    await removeConflict(noteId);
+    try {
+      const response = await fetch(`/api/notes/${noteId}`, { cache: "no-store" });
+      if (response.ok) {
+        const data = (await response.json()) as { note: Note };
+        await cacheNote(data.note);
+      }
+    } catch {
+      // mantém a cópia do servidor já guardada no conflito
+      await putServerSnapshot(noteId, conflict);
+    }
+    return true;
+  }
+
+  // both
+  try {
+    const response = await fetch("/api/notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: conflict.localTitle,
+        content: conflict.localContent,
+      }),
+    });
+    if (!response.ok) return false;
+    const data = (await response.json()) as { note: Note };
+    await cacheNote(data.note);
+  } catch {
+    return false;
+  }
+  await removeOpsForNote(noteId);
+  await removeConflict(noteId);
+  await putServerSnapshot(noteId, conflict);
+  return true;
+}
+
+async function putServerSnapshot(
+  noteId: number,
+  conflict: ConflictRecord,
+): Promise<void> {
+  const existing = await getCachedNote(noteId);
+  await putCachedNote({
+    id: noteId,
+    title: conflict.serverTitle,
+    content: conflict.serverContent,
+    preview: previewFromContent(conflict.serverContent),
+    attachmentCount: existing?.attachmentCount ?? 0,
+    attachments: existing?.attachments ?? [],
+    createdAt: existing?.createdAt ?? conflict.serverUpdatedAt,
+    updatedAt: conflict.serverUpdatedAt,
+    serverUpdatedAt: conflict.serverUpdatedAt,
+    full: true,
+  });
 }

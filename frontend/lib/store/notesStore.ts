@@ -20,7 +20,7 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
-function previewFromContent(content: string | null): string {
+export function previewFromContent(content: string | null): string {
   if (content === null) return "";
   return htmlToText(content).slice(0, PREVIEW_LENGTH);
 }
@@ -34,6 +34,7 @@ export function toSummary(note: CachedNote): NoteSummary {
     attachmentCount: note.attachmentCount,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
+    serverUpdatedAt: note.serverUpdatedAt,
   };
 }
 
@@ -60,6 +61,7 @@ export async function cacheSummaries(
       attachments: existing?.attachments ?? [],
       createdAt: summary.createdAt,
       updatedAt: summary.updatedAt,
+      serverUpdatedAt: summary.updatedAt,
       full: existing?.full ?? false,
     };
 
@@ -81,9 +83,17 @@ export async function cacheNote(note: Note): Promise<void> {
     attachments: note.attachments,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
+    serverUpdatedAt: note.updatedAt,
     full: true,
   };
 
+  await db.put("notes", record);
+}
+
+// Grava um registro completo no cache sem assumir que veio do servidor (usado
+// para edições locais, que preservam o carimbo conhecido do servidor).
+export async function putCachedNote(record: CachedNote): Promise<void> {
+  const db = await getDB();
   await db.put("notes", record);
 }
 

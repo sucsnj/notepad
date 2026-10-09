@@ -94,12 +94,16 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
 - `NoteApp.tsx` gerencia estado, busca (debounce 250 ms) e autosave
   (debounce 800 ms via `PATCH`).
 - Offline-first (em andamento): `frontend/lib/store/` mantém cache local em
-  **IndexedDB** (`idb`) — `db.ts` (stores `notes`/`meta`/`outbox`), `notesStore.ts`
-  (cache + mapeamento de IDs), `outbox.ts` (fila), `notesRepository.ts` (regras de
-  leitura/escrita) e `sync.ts` (`flushOutbox`). A lista é cache-first, há
-  indicador "Sem conexão" e a escrita offline enfileira operações. A outbox é
-  drenada em `NoteApp.syncNow()` (abertura, `online`, foco, a cada 30 s). Ver
-  `PROJECT_STATUS.md` seção 9.
+  **IndexedDB** (`idb`) — `db.ts` (stores `notes`/`meta`/`outbox`/`conflicts`),
+  `notesStore.ts` (cache + mapeamento de IDs + `serverUpdatedAt`), `outbox.ts`
+  (fila), `notesRepository.ts` (regras de leitura/escrita + resolução de
+  conflitos), `conflicts.ts` (conflitos pendentes de decisão) e `sync.ts`
+  (`flushOutbox`). A lista é cache-first, há indicador "Sem conexão" e a escrita
+  offline enfileira operações. A outbox é drenada em `NoteApp.syncNow()`
+  (abertura, `online`, foco, a cada 30 s). Antes de cada `PATCH`, `sync.ts` faz
+  `GET` e compara `serverUpdatedAt`; divergência vira conflito e abre o
+  `ConflictDialog` (manter local / servidor / ambos). Ver `PROJECT_STATUS.md`
+  seção 9.
 
 ## Acesso pela rede
 

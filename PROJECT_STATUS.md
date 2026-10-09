@@ -83,10 +83,11 @@ notepad/
    │  ├─ cn.ts               # helper de className
    │  ├─ format.ts           # datas e bytes (pt-BR)
    │  └─ store/              # cache local offline-first (IndexedDB)
-   │     ├─ db.ts            # schema do IndexedDB (stores notes/meta/outbox)
+   │     ├─ db.ts            # schema do IndexedDB (stores notes/meta/outbox/conflicts)
    │     ├─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
    │     ├─ outbox.ts        # fila de operações pendentes (create/update/delete)
-   │     ├─ notesRepository.ts # regras de leitura/escrita offline + fusão de listas
+   │     ├─ notesRepository.ts # regras de leitura/escrita offline + fusão + resolução de conflitos
+   │     ├─ conflicts.ts     # store de conflitos pendentes de decisão
    │     └─ sync.ts          # drenagem da outbox (flushOutbox) + reconciliação
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
@@ -97,6 +98,7 @@ notepad/
          ├─ NoteList.tsx     # lista + busca + tema
          ├─ NoteEditor.tsx   # título, editor TipTap, anexos
          ├─ EditorToolbar.tsx# barra de formatação (inclui espaçamento de linhas)
+         ├─ ConflictDialog.tsx # decisão sobre conflitos de sincronização
          ├─ ThemeToggle.tsx  # alternância claro/escuro
          └─ Icons.tsx        # ícones SVG
 ```
@@ -316,7 +318,7 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
-- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–3 concluídas).
+- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–4 concluídas).
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -382,8 +384,22 @@ texto** (anexos ficam para a Etapa 5). Implementação **por etapas**.
   - `NoteApp.syncNow()` dispara ao abrir o app, no evento `online`, ao focar a
     janela e a cada 30 s; ao terminar, atualiza a lista e remapeia a nota aberta.
   - Typecheck/lint/build do frontend verdes; smoke dos dois servidores ok.
-- [ ] **Etapa 4 — Conflitos / mudanças remotas:** detecção via `updatedAt`/versão;
-  mudança remota sem conflito → aplica e notifica; com edição local pendente →
-  o usuário decide (manter local / servidor / ambos).
+- **Etapa 4 — Conflitos / mudanças remotas** — ✅ concluída
+  - Cada nota no cache guarda `serverUpdatedAt` (último `updatedAt` conhecido do
+    servidor), separado do `updatedAt` local, para detectar divergência.
+  - **Mudança remota sem conflito** (sem edição local pendente): a lista reflete
+    o servidor e o app mostra um aviso discreto "N anotação(ões) atualizada(s) no
+    servidor" (some em 5 s).
+  - **Conflito** (edição local pendente **e** nota alterada no servidor): durante
+    `flushOutbox`, antes do `PATCH` faz-se `GET` da nota e compara-se
+    `serverUpdatedAt` com o `updatedAt` do servidor. Se divergir, a operação é
+    **bloqueada** e um registro vai para o store `conflicts` (guardando a versão
+    local e a do servidor). Notas com conflito ficam fora das demais drenagens.
+  - **UI `ConflictDialog`**: modal listando a versão local e a do servidor com a
+    escolha **Manter minha versão** (`PATCH` forçado), **Usar a do servidor**
+    (descarta a edição local) e **Manter ambas** (cria a versão local como nova
+    anotação e mantém a do servidor na original). Resolução via
+    `resolveConflict()` no repositório.
+  - Typecheck/lint/build do frontend verdes.
 - [ ] **Etapa 5 (opcional) — Anexos offline:** blobs no IndexedDB, fila de upload,
   reescrita de URL ao sincronizar.

@@ -28,6 +28,7 @@ export interface NoteSummary {
   createdAt: string;
   updatedAt: string;
   pending?: boolean;
+  serverUpdatedAt?: string | null;
 }
 
 export type SaveStatus =

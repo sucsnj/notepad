@@ -8,13 +8,19 @@ import {
   getNote as getNoteRecord,
   markPending,
   mergeSummaries,
+  pendingNoteIdSet,
   removeNote as removeNoteRecord,
+  resolveConflict,
   saveNote,
+  type ConflictChoice,
 } from "@/lib/store/notesRepository";
 import { flushOutbox } from "@/lib/store/sync";
+import { listConflicts } from "@/lib/store/conflicts";
+import type { ConflictRecord } from "@/lib/store/db";
 import { cn } from "@/lib/cn";
 import NoteList from "./NoteList";
 import NoteEditor, { type EditorChange } from "./NoteEditor";
+import ConflictDialog from "./ConflictDialog";
 import { NoteIcon } from "./Icons";
 
 type MobileView = "list" | "editor";
@@ -32,47 +38,74 @@ export default function NoteApp() {
   const [error, setError] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<MobileView>("list");
   const [offline, setOffline] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
+  const [resolving, setResolving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const draftRef = useRef<EditorChange | null>(null);
   const lastSavedRef = useRef("");
   const activeIdRef = useRef<number | null>(null);
   const queryRef = useRef(query);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 5000);
+  }, []);
 
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
 
-  const fetchNotes = useCallback(async (search: string) => {
-    let cached: NoteSummary[] = [];
-    try {
-      cached = await listCachedSummaries(search);
-      setNotes(await markPending(cached));
-    } catch {
-      // cache indisponível; segue para a rede
-    }
-
-    if (cached.length === 0) setLoadingList(true);
-
-    try {
-      const response = await fetch(`/api/notes?q=${encodeURIComponent(search)}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("Não foi possível carregar as anotações");
-      const data = (await response.json()) as { notes: NoteSummary[] };
-      setNotes(await mergeSummaries(data.notes, cached));
-      setError(null);
-      setOffline(false);
-      void cacheSummaries(data.notes);
-    } catch (err) {
-      setOffline(true);
-      if (cached.length === 0) {
-        setError(err instanceof Error ? err.message : "Erro ao carregar");
+  const fetchNotes = useCallback(
+    async (search: string) => {
+      let cached: NoteSummary[] = [];
+      try {
+        cached = await listCachedSummaries(search);
+      } catch {
+        // sem cache; segue direto para a rede
       }
-    } finally {
-      setLoadingList(false);
-    }
-  }, []);
+      if (cached.length) setNotes(await markPending(cached));
+
+      try {
+        const response = await fetch(
+          `/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) throw new Error("Não foi possível carregar as anotações");
+        const data = (await response.json()) as { notes: NoteSummary[] };
+
+        const pendingIds = await pendingNoteIdSet();
+        void cacheSummaries(
+          data.notes.filter((item) => !pendingIds.has(item.id)),
+        );
+
+        const cachedMap = new Map(cached.map((item) => [item.id, item]));
+        const remoteChanged = data.notes.filter((item) => {
+          if (pendingIds.has(item.id)) return false;
+          const local = cachedMap.get(item.id);
+          return (
+            !!local?.serverUpdatedAt && local.serverUpdatedAt !== item.updatedAt
+          );
+        }).length;
+        if (remoteChanged > 0) {
+          showNotice(`${remoteChanged} anotação(ões) atualizada(s) no servidor`);
+        }
+
+        setNotes(await mergeSummaries(data.notes, cached));
+        setError(null);
+        setOffline(false);
+      } catch {
+        setOffline(true);
+        setNotes(await markPending(cached));
+      } finally {
+        setLoadingList(false);
+      }
+    },
+    [showNotice],
+  );
 
   const syncNow = useCallback(async () => {
     try {
@@ -86,13 +119,59 @@ export default function NoteApp() {
     } catch {
       // ignora; os gatilhos tentam de novo
     }
+    setConflicts(await listConflicts());
     void fetchNotes(queryRef.current);
   }, [fetchNotes]);
 
+  const applyNote = useCallback((note: Note) => {
+    setActiveNote(note);
+    draftRef.current = {
+      title: note.title,
+      content: note.content,
+      textContent: "",
+    };
+    lastSavedRef.current = JSON.stringify({
+      title: note.title,
+      content: note.content,
+    });
+    setStatus("idle");
+  }, []);
+
+  const handleResolve = useCallback(
+    async (choice: ConflictChoice) => {
+      const current = conflicts[0];
+      if (!current) return;
+      setResolving(true);
+      let ok = false;
+      try {
+        ok = await resolveConflict(current.noteId, choice);
+      } catch {
+        ok = false;
+      }
+      if (!ok) {
+        setError("Não foi possível resolver agora — verifique a conexão");
+      } else if (activeIdRef.current === current.noteId) {
+        try {
+          const reloaded = await getNoteRecord(current.noteId);
+          if (reloaded) applyNote(reloaded.note);
+        } catch {
+          // mantém o conteúdo atual; a lista já foi recarregada
+        }
+      }
+      setResolving(false);
+      setConflicts(await listConflicts());
+      void fetchNotes(queryRef.current);
+    },
+    [applyNote, conflicts, fetchNotes],
+  );
+
   useEffect(() => {
-    const handle = setTimeout(() => {
-      void fetchNotes(query);
-    }, query ? 250 : 0);
+    const handle = setTimeout(
+      () => {
+        void fetchNotes(query);
+      },
+      query ? 250 : 0,
+    );
 
     return () => clearTimeout(handle);
   }, [query, fetchNotes]);
@@ -121,25 +200,11 @@ export default function NoteApp() {
       });
       lastSavedRef.current = snapshot;
       setStatus(outcome.queued ? "queued" : "saved");
-      void fetchNotes(queryRef.current);
+      void syncNow();
     } catch {
       setStatus("error");
     }
-  }, [fetchNotes]);
-
-  const applyNote = useCallback((note: Note) => {
-    setActiveNote(note);
-    draftRef.current = {
-      title: note.title,
-      content: note.content,
-      textContent: "",
-    };
-    lastSavedRef.current = JSON.stringify({
-      title: note.title,
-      content: note.content,
-    });
-    setStatus("idle");
-  }, []);
+  }, [syncNow]);
 
   const openNote = useCallback(
     async (id: number) => {
@@ -328,6 +393,14 @@ export default function NoteApp() {
         )}
       </main>
 
+      {notice && (
+        <div className="pointer-events-none fixed inset-x-0 top-3 z-40 flex justify-center px-4">
+          <div className="rounded-full border border-border bg-card px-3 py-1.5 text-xs text-card-foreground shadow-md">
+            {notice}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center p-2">
           <button
@@ -338,6 +411,15 @@ export default function NoteApp() {
             {error} · toque para fechar
           </button>
         </div>
+      )}
+
+      {conflicts.length > 0 && (
+        <ConflictDialog
+          conflict={conflicts[0]}
+          total={conflicts.length}
+          busy={resolving}
+          onResolve={handleResolve}
+        />
       )}
     </div>
   );

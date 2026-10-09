@@ -10,6 +10,8 @@ export interface CachedNote {
   attachments: Attachment[];
   createdAt: string;
   updatedAt: string;
+  // Última versão conhecida vinda do servidor (base para detectar conflitos).
+  serverUpdatedAt: string | null;
   full: boolean;
 }
 
@@ -22,6 +24,17 @@ export interface OutboxOp {
   title?: string;
   content?: string;
   createdAt: string;
+}
+
+export interface ConflictRecord {
+  noteId: number;
+  localTitle: string;
+  localContent: string;
+  serverTitle: string;
+  serverContent: string;
+  localUpdatedAt: string;
+  serverUpdatedAt: string;
+  detectedAt: string;
 }
 
 interface NotepadDB extends DBSchema {
@@ -37,10 +50,14 @@ interface NotepadDB extends DBSchema {
     key: string;
     value: OutboxOp;
   };
+  conflicts: {
+    key: number;
+    value: ConflictRecord;
+  };
 }
 
 const DB_NAME = "notepad";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<NotepadDB>> | null = null;
 
@@ -60,6 +77,9 @@ export function getDB(): Promise<IDBPDatabase<NotepadDB>> {
         }
         if (!db.objectStoreNames.contains("outbox")) {
           db.createObjectStore("outbox", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("conflicts")) {
+          db.createObjectStore("conflicts", { keyPath: "noteId" });
         }
       },
     });
