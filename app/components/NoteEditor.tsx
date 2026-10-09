@@ -234,7 +234,7 @@ export default function NoteEditor({
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <div className="shrink-0 px-4 pb-2 pt-3 md:w-[70%]">
+        <div className="min-w-0 flex-1 px-4 pb-2 pt-3">
           <input
             value={title}
             onChange={handleTitleChange}
@@ -283,37 +283,6 @@ export default function NoteEditor({
             <p className="mt-2 text-xs text-danger">{uploadError}</p>
           )}
         </div>
-          
-        <div className="ml-auto flex w-auto md:w-[30%] shrink-0 items-center gap-2 px-2 py-2">
-          <button
-            type="button"
-            onClick={onBack}
-            title="Voltar para a lista"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:hidden"
-          >
-            <ChevronLeftIcon />
-          </button>
-
-          <span
-            className={cn(
-              "text-xs",
-              status === "error" ? "text-danger" : "text-muted-foreground",
-            )}
-          >
-            {statusLabel[status] ||
-              (note.updatedAt ? `Editado em ${formatDateTime(note.updatedAt)}` : "")}
-          </span>
-
-          <button
-            type="button"
-            onClick={onDelete}
-            title="Excluir anotação"
-            className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-danger"
-          >
-            <TrashIcon />
-          </button>
-        </div>
-
       </header>
       <EditorToolbar
         editor={editor}
@@ -348,6 +317,36 @@ export default function NoteEditor({
           Enviando arquivo…
         </p>
       )}
+
+      <footer className="flex items-center gap-1.5 border-t border-border px-2 py-1 text-[11px] text-muted-foreground">
+        <button
+          type="button"
+          onClick={onBack}
+          title="Voltar para a lista"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition hover:bg-muted hover:text-foreground md:hidden"
+        >
+          <ChevronLeftIcon width={15} height={15} />
+        </button>
+
+        <span
+          className={cn(
+            "truncate",
+            status === "error" ? "text-danger" : "text-muted-foreground/70",
+          )}
+        >
+          {statusLabel[status] ||
+            (note.updatedAt ? `Editado em ${formatDateTime(note.updatedAt)}` : "")}
+        </span>
+
+        <button
+          type="button"
+          onClick={onDelete}
+          title="Excluir anotação"
+          className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition hover:bg-muted hover:text-danger"
+        >
+          <TrashIcon width={14} height={14} />
+        </button>
+      </footer>
     </div>
   );
 }
