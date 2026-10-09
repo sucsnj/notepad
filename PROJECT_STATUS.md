@@ -83,11 +83,13 @@ notepad/
    │  ├─ cn.ts               # helper de className
    │  ├─ format.ts           # datas e bytes (pt-BR)
    │  └─ store/              # cache local offline-first (IndexedDB)
-   │     ├─ db.ts            # schema do IndexedDB (stores notes/meta/outbox/conflicts)
+   │     ├─ db.ts            # schema do IndexedDB (notes/meta/outbox/conflicts/blobs)
    │     ├─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
-   │     ├─ outbox.ts        # fila de operações pendentes (create/update/delete)
-   │     ├─ notesRepository.ts # regras de leitura/escrita offline + fusão + resolução de conflitos
+   │     ├─ outbox.ts        # fila de operações pendentes (create/update/delete/upload/detach)
+   │     ├─ notesRepository.ts # regras de leitura/escrita offline + fusão + conflitos
    │     ├─ conflicts.ts     # store de conflitos pendentes de decisão
+   │     ├─ blobs.ts         # anexos locais (blobs) + URLs "notepad-local://"
+   │     ├─ attachmentsRepository.ts # anexar/remover com fila offline
    │     └─ sync.ts          # drenagem da outbox (flushOutbox) + reconciliação
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
@@ -318,7 +320,7 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
-- [ ] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–4 concluídas).
+- [x] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–5 concluídas).
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -401,5 +403,36 @@ texto** (anexos ficam para a Etapa 5). Implementação **por etapas**.
     anotação e mantém a do servidor na original). Resolução via
     `resolveConflict()` no repositório.
   - Typecheck/lint/build do frontend verdes.
-- [ ] **Etapa 5 (opcional) — Anexos offline:** blobs no IndexedDB, fila de upload,
-  reescrita de URL ao sincronizar.
+- **Etapa 5 — Anexos offline** — ✅ concluída
+  - Store `blobs` no IndexedDB (v4) guarda o arquivo anexado offline; o anexo
+    recebe **id local negativo** e a URL `notepad-local://<id>`.
+  - `attachmentsRepository.ts`: `attachFile` tenta `POST /api/upload` e, sem
+    conexão, guarda o blob + enfileira `upload`; `removeAttachment` apaga anexos
+    locais na hora e enfileira `detach` para os que já estão no servidor.
+  - Fila: `upload`/`detach` são independentes de `create`/`update` (não são
+    absorvidos); `delete` da nota descarta tudo; `remapOps` move anexos pendentes
+    do id temporário para o id real após a reconciliação da nota.
+  - **Imagens inline**: extensão `Image` com node view que troca
+    `notepad-local://<id>` pela object URL do blob; links para anexos locais são
+    resolvidos no clique.
+  - **Reescrita de URL ao sincronizar**: após o upload, `applyUpload` substitui a
+    URL local pela definitiva no conteúdo em cache e nas operações pendentes, e
+    corrige o conteúdo já gravado no servidor. `NoteApp` recarrega o editor
+    aberto (`editorEpoch`) para exibir a versão definitiva.
+  - Erros permanentes (ex.: `413` arquivo grande demais) descartam a operação em
+    vez de travar a fila; exclusão da nota apaga os blobs locais.
+  - UI: chip do anexo mostra selo "offline" enquanto pendente.
+  - Typecheck/lint/build do frontend e typecheck do backend verdes.
+
+### Como testar (roteiro)
+
+1. Backend ligado, abra o app (popula o cache).
+2. Desligue o backend (ou use o DevTools em modo offline).
+3. Crie/abra uma nota, anexe uma **imagem** e um **arquivo**: os chips aparecem
+   com selo "offline", a imagem aparece inline e o conteúdo é salvo.
+4. Recarregue a página (F5): tudo continua disponível.
+5. Religue o backend: em até 30 s (ou ao focar a janela) os arquivos sobem, os
+   selos somem, o editor é recarregado com as URLs definitivas e o conteúdo no
+   servidor passa a apontar para `/api/attachments/...`.
+6. Remova um anexo enquanto offline: some da lista e é removido do servidor ao
+   reconectar.

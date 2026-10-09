@@ -9,6 +9,7 @@ export interface Attachment {
   url: string;
   kind: AttachmentKind;
   createdAt: string;
+  pending?: boolean;
 }
 
 export interface Note {

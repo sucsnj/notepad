@@ -8,7 +8,13 @@ import {
   resolveId,
   setMeta,
 } from "./notesStore";
-import { enqueue, pendingKinds, removeOpsForNote } from "./outbox";
+import {
+  enqueue,
+  pendingKinds,
+  removeNoteOps,
+  removeOpsForNote,
+} from "./outbox";
+import { deleteBlobsForNote, localAttachmentsFor } from "./blobs";
 import { getConflict, putConflict, removeConflict } from "./conflicts";
 import type { CachedNote, ConflictRecord } from "./db";
 import type { Note, NoteSummary } from "@/lib/types";
@@ -78,9 +84,9 @@ export async function saveNote(
           });
           if (response.ok) {
             const data = (await response.json()) as { note: Note };
-            await cacheNote(data.note);
-            await removeOpsForNote(targetId);
-            await removeOpsForNote(id);
+            await cacheNote(data.note, await localAttachmentsFor(targetId));
+            await removeNoteOps(targetId);
+            await removeNoteOps(id);
             return { saved: true, queued: false };
           }
         }
@@ -129,7 +135,7 @@ export async function createNote(): Promise<CreateOutcome> {
     });
     if (response.ok) {
       const data = (await response.json()) as { note: Note };
-      await cacheNote(data.note);
+      await cacheNote(data.note, await localAttachmentsFor(data.note.id));
       return { note: data.note, queued: false };
     }
   } catch {
@@ -172,7 +178,11 @@ export async function createNote(): Promise<CreateOutcome> {
 export async function removeNote(id: number): Promise<{ queued: boolean }> {
   const targetId = await resolveId(id);
   await deleteCachedNote(id);
-  if (targetId !== id) await deleteCachedNote(targetId);
+  await deleteBlobsForNote(id);
+  if (targetId !== id) {
+    await deleteCachedNote(targetId);
+    await deleteBlobsForNote(targetId);
+  }
 
   if (isTempId(targetId)) {
     // Nunca chegou ao servidor: basta descartar a fila.
@@ -229,8 +239,12 @@ export async function getNote(
       const response = await fetch(`/api/notes/${targetId}`, { cache: "no-store" });
       if (response.ok) {
         const data = (await response.json()) as { note: Note };
-        await cacheNote(data.note);
-        return { note: data.note, offline: false };
+        const locals = await localAttachmentsFor(targetId);
+        await cacheNote(data.note, locals);
+        return {
+          note: { ...data.note, attachments: [...data.note.attachments, ...locals] },
+          offline: false,
+        };
       }
     } catch {
       // cai para o cache local
@@ -319,23 +333,23 @@ export async function resolveConflict(
       });
       if (!response.ok) return false;
       const data = (await response.json()) as { note: Note };
-      await cacheNote(data.note);
+      await cacheNote(data.note, await localAttachmentsFor(noteId));
     } catch {
       return false;
     }
-    await removeOpsForNote(noteId);
+    await removeNoteOps(noteId);
     await removeConflict(noteId);
     return true;
   }
 
   if (choice === "server") {
-    await removeOpsForNote(noteId);
+    await removeNoteOps(noteId);
     await removeConflict(noteId);
     try {
       const response = await fetch(`/api/notes/${noteId}`, { cache: "no-store" });
       if (response.ok) {
         const data = (await response.json()) as { note: Note };
-        await cacheNote(data.note);
+await cacheNote(data.note, await localAttachmentsFor(data.note.id));
       }
     } catch {
       // mantém a cópia do servidor já guardada no conflito
@@ -356,11 +370,11 @@ export async function resolveConflict(
     });
     if (!response.ok) return false;
     const data = (await response.json()) as { note: Note };
-    await cacheNote(data.note);
+    await cacheNote(data.note, await localAttachmentsFor(noteId));
   } catch {
     return false;
   }
-  await removeOpsForNote(noteId);
+  await removeNoteOps(noteId);
   await removeConflict(noteId);
   await putServerSnapshot(noteId, conflict);
   return true;

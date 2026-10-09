@@ -41,6 +41,7 @@ export default function NoteApp() {
   const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
   const [resolving, setResolving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editorEpoch, setEditorEpoch] = useState(0);
 
   const draftRef = useRef<EditorChange | null>(null);
   const lastSavedRef = useRef("");
@@ -58,6 +59,20 @@ export default function NoteApp() {
   useEffect(() => {
     queryRef.current = query;
   }, [query]);
+
+  const applyNote = useCallback((note: Note) => {
+    setActiveNote(note);
+    draftRef.current = {
+      title: note.title,
+      content: note.content,
+      textContent: "",
+    };
+    lastSavedRef.current = JSON.stringify({
+      title: note.title,
+      content: note.content,
+    });
+    setStatus("idle");
+  }, []);
 
   const fetchNotes = useCallback(
     async (search: string) => {
@@ -116,26 +131,30 @@ export default function NoteApp() {
         setActiveId(realId);
         activeIdRef.current = realId;
       }
+
+      // Anexos enviados offline trocaram URLs locais por URLs do servidor:
+      // recarrega o editor aberto para mostrar o conteúdo definitivo.
+      if (result.rewrites.length > 0) {
+        const active = activeIdRef.current;
+        const touched = result.rewrites.some((item) => {
+          if (item.noteId === active) return true;
+          const real = result.reconciled.get(item.noteId);
+          return real !== undefined && real === active;
+        });
+        if (touched) {
+          const reloaded = active === null ? null : await getNoteRecord(active);
+          if (reloaded) {
+            applyNote(reloaded.note);
+            setEditorEpoch((value) => value + 1);
+          }
+        }
+      }
     } catch {
       // ignora; os gatilhos tentam de novo
     }
     setConflicts(await listConflicts());
     void fetchNotes(queryRef.current);
-  }, [fetchNotes]);
-
-  const applyNote = useCallback((note: Note) => {
-    setActiveNote(note);
-    draftRef.current = {
-      title: note.title,
-      content: note.content,
-      textContent: "",
-    };
-    lastSavedRef.current = JSON.stringify({
-      title: note.title,
-      content: note.content,
-    });
-    setStatus("idle");
-  }, []);
+  }, [applyNote, fetchNotes]);
 
   const handleResolve = useCallback(
     async (choice: ConflictChoice) => {
@@ -374,7 +393,7 @@ export default function NoteApp() {
       >
         {activeNote ? (
           <NoteEditor
-            key={activeNote.id}
+            key={`${activeNote.id}:${editorEpoch}`}
             note={activeNote}
             status={status}
             onChange={handleChange}

@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { Attachment } from "@/lib/types";
+import type { Attachment, AttachmentKind } from "@/lib/types";
 
 export interface CachedNote {
   id: number;
@@ -15,7 +15,12 @@ export interface CachedNote {
   full: boolean;
 }
 
-export type OutboxKind = "create" | "update" | "delete";
+export type OutboxKind =
+  | "create"
+  | "update"
+  | "delete"
+  | "upload"
+  | "detach";
 
 export interface OutboxOp {
   id: string;
@@ -23,7 +28,24 @@ export interface OutboxOp {
   noteId: number;
   title?: string;
   content?: string;
+  // Anexos (upload/detach): id local do anexo ou id no servidor.
+  attachmentId?: number;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
   createdAt: string;
+}
+
+// Arquivo anexado enquanto offline, guardado no IndexedDB até o upload.
+export interface StoredBlob {
+  id: number;
+  noteId: number;
+  filename: string;
+  mimeType: string;
+  size: number;
+  kind: AttachmentKind;
+  createdAt: string;
+  blob: Blob;
 }
 
 export interface ConflictRecord {
@@ -54,10 +76,14 @@ interface NotepadDB extends DBSchema {
     key: number;
     value: ConflictRecord;
   };
+  blobs: {
+    key: number;
+    value: StoredBlob;
+  };
 }
 
 const DB_NAME = "notepad";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<NotepadDB>> | null = null;
 
@@ -80,6 +106,9 @@ export function getDB(): Promise<IDBPDatabase<NotepadDB>> {
         }
         if (!db.objectStoreNames.contains("conflicts")) {
           db.createObjectStore("conflicts", { keyPath: "noteId" });
+        }
+        if (!db.objectStoreNames.contains("blobs")) {
+          db.createObjectStore("blobs", { keyPath: "id" });
         }
       },
     });

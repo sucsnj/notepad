@@ -1,5 +1,5 @@
 import { getDB, type CachedNote } from "./db";
-import type { Note, NoteSummary } from "@/lib/types";
+import type { Attachment, Note, NoteSummary } from "@/lib/types";
 
 const PREVIEW_LENGTH = 160;
 
@@ -71,16 +71,20 @@ export async function cacheSummaries(
   await tx.done;
 }
 
-export async function cacheNote(note: Note): Promise<void> {
+export async function cacheNote(
+  note: Note,
+  extraAttachments: Attachment[] = [],
+): Promise<void> {
   const db = await getDB();
+  const attachments = [...note.attachments, ...extraAttachments];
 
   const record: CachedNote = {
     id: note.id,
     title: note.title,
     content: note.content,
     preview: previewFromContent(note.content),
-    attachmentCount: note.attachments.length,
-    attachments: note.attachments,
+    attachmentCount: attachments.length,
+    attachments,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
     serverUpdatedAt: note.updatedAt,

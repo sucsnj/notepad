@@ -12,6 +12,11 @@ import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extensions";
 import type { Attachment, Note, SaveStatus } from "@/lib/types";
+import { isLocalUrl, resolveLocalUrl } from "@/lib/store/blobs";
+import {
+  attachFile,
+  removeAttachment as removeAttachmentRecord,
+} from "@/lib/store/attachmentsRepository";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import EditorToolbar from "./EditorToolbar";
@@ -37,6 +42,30 @@ export interface NoteEditorProps {
   onDelete: () => void;
   onBack: () => void;
 }
+
+// Imagens anexadas offline usam "notepad-local://<id>"; o node view troca
+// pela URL real (object URL do blob) assim que ela estiver disponível.
+const LocalAwareImage = Image.extend({
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement("img");
+      const src = String(node.attrs.src ?? "");
+
+      if (isLocalUrl(src)) {
+        dom.alt = String(node.attrs.alt ?? "");
+        void resolveLocalUrl(src).then((url) => {
+          if (url) dom.src = url;
+        });
+      } else {
+        dom.src = src;
+        if (node.attrs.alt) dom.alt = String(node.attrs.alt);
+      }
+
+      if (node.attrs.title) dom.title = String(node.attrs.title);
+      return { dom };
+    };
+  },
+});
 
 const extensions = [
   Extension.create({
@@ -69,7 +98,7 @@ const extensions = [
       HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
     },
   }),
-  Image.configure({ inline: false, allowBase64: false }),
+  LocalAwareImage.configure({ inline: false, allowBase64: false }),
   Placeholder.configure({ placeholder: "Comece a escrever suas anotações…" }),
 ];
 
@@ -93,6 +122,33 @@ export default function NoteEditor({
   const [attachments, setAttachments] = useState<Attachment[]>(note.attachments);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [localUrls, setLocalUrls] = useState<Record<number, string>>({});
+
+  // Anexos locais (ainda não subidos) precisam de uma object URL para abrir.
+  useEffect(() => {
+    const locals = attachments.filter((item) => isLocalUrl(item.url));
+    if (locals.length === 0) return;
+
+    let cancelled = false;
+
+    void Promise.all(
+      locals.map(async (item) => {
+        const url = await resolveLocalUrl(item.url);
+        return [item.id, url] as const;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Record<number, string> = {};
+      for (const [id, url] of entries) {
+        if (url) next[id] = url;
+      }
+      setLocalUrls(next);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attachments]);
 
   const titleRef = useRef(title);
 
@@ -116,6 +172,18 @@ export default function NoteEditor({
       attributes: {
         class: "editor-content",
         spellcheck: "true",
+      },
+      // Links para anexos locais só podem ser abertos pelo blob.
+      handleClick: (_view, _pos, event) => {
+        const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+        const href = anchor?.getAttribute("href");
+        if (!href || !isLocalUrl(href)) return false;
+
+        event.preventDefault();
+        void resolveLocalUrl(href).then((url) => {
+          if (url) window.open(url, "_blank", "noopener");
+        });
+        return true;
       },
     },
     onUpdate: ({ editor: instance }) => {
@@ -152,17 +220,7 @@ export default function NoteEditor({
     setUploadError(null);
 
     try {
-      const params = new URLSearchParams({
-        noteId: String(note.id),
-        attachmentId: String(attachment.id),
-      });
-      const response = await fetch(`/api/upload?${params}`, { method: "DELETE" });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.error ?? "Falha ao remover o anexo");
-      }
-
+      await removeAttachmentRecord(note.id, attachment);
       setAttachments((previous) =>
         previous.filter((item) => item.id !== attachment.id),
       );
@@ -185,18 +243,7 @@ export default function NoteEditor({
     setUploadError(null);
 
     try {
-      const form = new FormData();
-      form.append("noteId", String(note.id));
-      form.append("file", file);
-
-      const response = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(data?.error ?? "Falha ao enviar o arquivo");
-      }
-
-      const attachment = data.attachment as Attachment;
+      const { attachment } = await attachFile(note.id, file);
       setAttachments((previous) => [...previous, attachment]);
 
       if (mode === "image") {
@@ -247,38 +294,52 @@ export default function NoteEditor({
 
           {attachments.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {attachments.map((attachment) => (
-                <div
-                  key={attachment.id}
-                  className="inline-flex max-w-full items-center rounded-full border border-border bg-card text-xs text-muted-foreground"
-                >
-                  <a
-                    href={attachment.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    download={attachment.kind === "file" ? attachment.originalName : undefined}
-                    title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
-                    className="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 transition hover:text-foreground"
+              {attachments.map((attachment) => {
+                const href = localUrls[attachment.id] ?? attachment.url;
+                const ready = !isLocalUrl(attachment.url) || !!localUrls[attachment.id];
+
+                return (
+                  <div
+                    key={attachment.id}
+                    className="inline-flex max-w-full items-center rounded-full border border-border bg-card text-xs text-muted-foreground"
                   >
-                    {attachment.kind === "image" ? (
-                      <ImageIcon width={13} height={13} />
-                    ) : (
-                      <FileIcon width={13} height={13} />
-                    )}
-                    <span className="max-w-40 truncate">{attachment.originalName}</span>
-                    <DownloadIcon width={13} height={13} />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttachment(attachment)}
-                    title="Remover anexo"
-                    aria-label={`Remover ${attachment.originalName}`}
-                    className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-muted hover:text-danger"
-                  >
-                    <XIcon width={12} height={12} />
-                  </button>
-                </div>
-              ))}
+                    <a
+                      href={ready ? href : undefined}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={attachment.kind === "file" ? attachment.originalName : undefined}
+                      title={`${attachment.originalName} (${formatBytes(attachment.size)})`}
+                      className={cn(
+                        "inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 transition hover:text-foreground",
+                        !ready && "pointer-events-none opacity-60",
+                      )}
+                    >
+                      {attachment.kind === "image" ? (
+                        <ImageIcon width={13} height={13} />
+                      ) : (
+                        <FileIcon width={13} height={13} />
+                      )}
+                      <span className="max-w-40 truncate">{attachment.originalName}</span>
+                      {attachment.pending ? (
+                        <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground">
+                          offline
+                        </span>
+                      ) : (
+                        <DownloadIcon width={13} height={13} />
+                      )}
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(attachment)}
+                      title="Remover anexo"
+                      aria-label={`Remover ${attachment.originalName}`}
+                      className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-muted hover:text-danger"
+                    >
+                      <XIcon width={12} height={12} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
