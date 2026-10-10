@@ -36,7 +36,7 @@ if (mode === "build") {
   args = [nextBin, "build"];
   label = "next build";
 } else {
-  const port = process.env.PORT || readEnvPort() || "3000";
+  const port = process.env.PORT || readEnvPort() || "3011";
   const hostname = process.env.HOSTNAME || "0.0.0.0";
   args = [nextBin, mode, "-H", hostname, "-p", String(port)];
   label = `next ${mode} -H ${hostname} -p ${port}`;

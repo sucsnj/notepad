@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Note, NoteSummary, SaveStatus } from "@/lib/types";
 import { cacheSummaries, listCachedSummaries } from "@/lib/store/notesStore";
 import {
@@ -27,7 +28,12 @@ type MobileView = "list" | "editor";
 
 const AUTO_SAVE_DELAY = 800;
 
-export default function NoteApp() {
+export default function NoteApp({
+  authEnabled = false,
+}: {
+  authEnabled?: boolean;
+}) {
+  const router = useRouter();
   const [notes, setNotes] = useState<NoteSummary[]>([]);
   const [query, setQuery] = useState("");
   const [loadingList, setLoadingList] = useState(true);
@@ -89,6 +95,11 @@ export default function NoteApp() {
           `/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`,
           { cache: "no-store" },
         );
+        if (response.status === 401) {
+          // Sessao expirada (ou cookie limpo): volta para a tela de login.
+          router.replace("/entrar");
+          return;
+        }
         if (!response.ok) throw new Error("Não foi possível carregar as anotações");
         const data = (await response.json()) as { notes: NoteSummary[] };
 
@@ -119,7 +130,7 @@ export default function NoteApp() {
         setLoadingList(false);
       }
     },
-    [showNotice],
+    [router, showNotice],
   );
 
   const syncNow = useCallback(async () => {
@@ -382,6 +393,7 @@ export default function NoteApp() {
           activeId={activeId}
           loading={loadingList}
           offline={offline}
+          authEnabled={authEnabled}
         />
       </div>
 

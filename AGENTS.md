@@ -7,8 +7,10 @@ tem **dois projetos independentes**, cada um com seu próprio `package.json`,
 - **`frontend/`** — Next.js 16 (App Router) + TypeScript, Tailwind CSS v4, TipTap v3.
 - **`backend/`** — API standalone em Fastify 5 + SQLite nativo (`node:sqlite`).
 
-O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (rewrites do Next,
-`BACKEND_URL`), então o cliente usa URLs relativas (mesma origem, sem CORS).
+O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (Route Handlers em
+`app/api/[...slug]` e `app/uploads/[...slug]`, destino `BACKEND_URL`), então o
+cliente usa URLs relativas (mesma origem, sem CORS). O proxy injeta o header
+`Authorization` do backend **no servidor** — o token não vai ao navegador.
 
 Referências: arquitetura/estado em `PROJECT_STATUS.md`; visão de usuário em
 `README.md`; regras do Next em `frontend/AGENTS.md`.
@@ -16,15 +18,16 @@ Referências: arquitetura/estado em `PROJECT_STATUS.md`; visão de usuário em
 ## Estrutura
 
 ```
-frontend/  app/ (layout,page,globals.css,components/*)  lib/ (cn,format,types)  next.config.ts  scripts/serve.mjs
-backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/serve.mjs  data/ (banco+uploads)
+frontend/  app/ (layout,page,globals.css,entrar,api,*,uploads,components/*)  lib/ (cn,format,types,proxy,session,store/*)  proxy.ts  next.config.ts  scripts/serve.mjs
+backend/   src/ (server,db,notes,attachments,uploads,http,text,auth,types)  scripts/serve.mjs  data/ (banco+uploads)  Dockerfile  compose.yaml
 ```
 
 - `frontend/app/components`: `NoteApp` (estado/autosave), `NoteList`, `NoteEditor`,
-  `EditorToolbar`, `ThemeToggle`, `Icons`.
-- `backend/src`: `server.ts` (rotas Fastify), `db.ts` (esquema + singleton
-  `globalThis.__notepadDb`), `notes.ts`, `attachments.ts`, `uploads.ts`, `http.ts`,
-  `text.ts`, `types.ts`. Imports no backend são **relativos**.
+  `EditorToolbar`, `ConflictDialog`, `LogoutButton`, `ThemeToggle`, `Icons`.
+- `backend/src`: `server.ts` (rotas Fastify + guarda de token), `db.ts` (esquema
+  + singleton `globalThis.__notepadDb`), `notes.ts`, `attachments.ts`,
+  `uploads.ts`, `http.ts`, `text.ts`, `auth.ts`, `types.ts`. Imports no backend
+  são **relativos**.
 
 ## Comandos
 
@@ -38,7 +41,7 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
 - Validar antes de concluir qualquer tarefa: `npm run typecheck` (backend) e
   `npm run typecheck` + `npm run lint` (frontend). O `typecheck` do frontend
   depende de tipos gerados — rode `npm run build` uma vez após clonar.
-- Portas padrão: backend `3001`, frontend `3000`.
+- Portas padrão: backend `3010`, frontend `3011`.
 
 ## API (backend)
 
@@ -59,6 +62,11 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
   (20 MB, excesso → `413`); imagens `inline`, demais `attachment`.
 - CORS via `CORS_ORIGIN` (lista por vírgula; vazio = qualquer). Desnecessário no
   fluxo com o proxy do frontend.
+- **Auth**: com `API_TOKEN` definido, tudo exige `Authorization: Bearer <token>`
+  (`401` sem ele); `/api/health` é a única rota pública. O `frontend/lib/proxy.ts`
+  injeta o header a partir de `BACKEND_TOKEN` — nunca exponha esse valor ao
+  cliente. Frontend protegida por `APP_PASSWORD` (`app/entrar` + `proxy.ts`).
+  Ambas vazias = ambiente local aberto.
 
 ## Banco e arquivos — backend
 
@@ -77,10 +85,12 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
 ## Frontend
 
 - `next.config.ts` tem `allowedDevOrigins` (padrão `*.*.*.*`, `**.local`;
-  sobrescrever via `ALLOWED_DEV_ORIGINS`) e os `rewrites` de `/api` e `/uploads`
-  para `BACKEND_URL` (padrão `http://127.0.0.1:3001`). `PORT` é lido por
-  `scripts/serve.mjs`, não pelo CLI do Next.
-- Env do frontend: `PORT`, `BACKEND_URL`, `ALLOWED_DEV_ORIGINS`.
+  sobrescrever via `ALLOWED_DEV_ORIGINS`) — o proxy de `/api` e `/uploads` **não**
+  é mais rewrite: são Route Handlers em `app/api/[...slug]` e
+  `app/uploads/[...slug]`, com destino `BACKEND_URL` (padrão
+  `http://127.0.0.1:3010`). `PORT` é lido por `scripts/serve.mjs`, não pelo CLI.
+- Env do frontend: `PORT`, `BACKEND_URL`, `BACKEND_TOKEN`, `APP_PASSWORD`,
+  `ALLOWED_DEV_ORIGINS`.
 - Ver `frontend/AGENTS.md` — documentação oficial do Next fica em
   `node_modules/next/dist/docs/`; ler antes de escrever código (route handlers
   recebem `params` como `Promise`).
@@ -106,6 +116,27 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,types)  scripts/s
   conflito e abre o `ConflictDialog` (manter local / servidor / ambos). Anexos
   offline sobem como `upload` e as URLs locais são reescritas para as do servidor
   (recarregando o editor via `editorEpoch`). Ver `PROJECT_STATUS.md` seção 9.
+
+## Backend em container (Docker)
+
+- `backend/Dockerfile` (node:24-alpine, multi-stage) e `backend/compose.yaml`.
+  O entrypoint continua sendo `scripts/serve.mjs` (nunca `node src/server.ts`).
+- `cd backend`: `docker compose up -d --build`, `docker compose logs -f`,
+  `docker compose down`.
+- **Persistência**: bind mount `./data:/app/data` (SQLite + `data/uploads`).
+  Para usar volume nomeado, troque o mount e declare `volumes: { notepad-data: }`.
+  Alternativa ao bind mount em Linux: `sudo chown -R 1000:1000 backend/data`
+  (o container roda como `node`). Pare o backend do host antes (porta 3010).
+- `tsx` é dependência de **runtime** (`serve.mjs` usa `--import tsx`); não pode
+  ficar em `devDependencies`, senão `npm ci` da imagem quebra.
+- Variáveis do compose: `BIND_ADDRESS` (padrão `127.0.0.1`; use `0.0.0.0` para
+  LAN) e `TUNNEL_TOKEN`.
+- **Túnel Cloudflare**: `docker compose --profile tunnel up -d` sobe o serviço
+  `cloudflared` (perfil opcional, token via `TUNNEL_TOKEN`, sem `config.yml`).
+- Antes de expor: defina `API_TOKEN` no `backend/.env` e o mesmo valor em
+  `BACKEND_TOKEN` no `frontend/.env`; para expor a interface, `APP_PASSWORD`.
+  Sem `API_TOKEN`, quem tiver a URL lê/edita/apaga as anotações (CORS não protege
+  clientes não-browser).
 
 ## Acesso pela rede
 

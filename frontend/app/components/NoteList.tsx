@@ -5,6 +5,7 @@ import { cn } from "@/lib/cn";
 import { formatRelative } from "@/lib/format";
 import { PaperclipIcon, PlusIcon, SearchIcon } from "./Icons";
 import ThemeToggle from "./ThemeToggle";
+import LogoutButton from "./LogoutButton";
 
 export interface NoteListProps {
   notes: NoteSummary[];
@@ -15,6 +16,7 @@ export interface NoteListProps {
   activeId: number | null;
   loading: boolean;
   offline?: boolean;
+  authEnabled?: boolean;
 }
 
 export default function NoteList({
@@ -26,6 +28,7 @@ export default function NoteList({
   activeId,
   loading,
   offline = false,
+  authEnabled = false,
 }: NoteListProps) {
   return (
     <aside className="flex h-full w-full flex-col border-r border-border bg-card">
@@ -39,6 +42,7 @@ export default function NoteList({
             className="w-full rounded-lg border border-border bg-background py-2 pl-8 pr-2 text-sm outline-none transition focus:border-foreground/30"
           />
         </div>
+        {authEnabled && <LogoutButton />}
         <ThemeToggle />
       </div>
 

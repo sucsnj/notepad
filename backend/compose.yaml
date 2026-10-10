@@ -1,0 +1,58 @@
+# Backend em container.
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down
+#
+# Persistencia: o bind mount "./data" guarda o banco SQLite (data/notepad.db,
+# com WAL) e os uploads (data/uploads) no host, fora da imagem.
+#
+# AVISO DE SEGURANCA: a API nao tem autenticacao. Expor o backend na internet
+# (tunel Cloudflare ou BIND_ADDRESS=0.0.0.0) deixa qualquer pessoa ler, alterar
+# e apagar as anotacoes. Prefira tunelar o FRONTEND; se expor o backend, restrinja
+# com CORS_ORIGIN e considere adicionar autenticacao.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: notepad-backend:latest
+    restart: unless-stopped
+    # BIND_ADDRESS=0.0.0.0 libera a porta na rede local (LAN/Tailscale).
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3010}:3010"
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/data/notepad.db
+      UPLOAD_DIR: /app/data/uploads
+    volumes:
+      # Bind mount (padrao). Para usar volume nomeado, troque por:
+      #   - notepad-data:/app/data
+      # e adicione no topo: volumes: { notepad-data: }
+      - ./data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3010/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Tunel Cloudflare (opcional): docker compose --profile tunnel up -d
+  # Exige TUNNEL_TOKEN no .env (criado em: Zero Trust > Networks > Tunnels).
+  # O token ja embute a configuracao, por isso nao ha config.yml.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      backend:
+        condition: service_healthy

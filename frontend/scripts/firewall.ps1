@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Stop"
 
 $envFile = Join-Path $PSScriptRoot "..\.env"
-$port = 3000
+$port = 3011
 if (Test-Path $envFile) {
   foreach ($line in Get-Content $envFile) {
     $trimmed = $line.Trim()

@@ -44,7 +44,7 @@ const envFlags = fs.existsSync(path.join(root, ".env")) ? ["--env-file", ".env"]
 const watchFlags = mode === "dev" ? ["--watch"] : [];
 
 const entry = path.join(root, "src", "server.ts");
-const port = process.env.PORT || readEnv("PORT") || "3001";
+const port = process.env.PORT || readEnv("PORT") || "3010";
 
 const args = [
   ...envFlags,

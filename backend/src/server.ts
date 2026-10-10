@@ -13,12 +13,20 @@ import {
 import { deleteAttachment, findAttachmentFile } from "./attachments";
 import { saveUpload, UploadError } from "./uploads";
 import { parseId, stringField } from "./http";
+import { authEnabled, isAuthorized } from "./auth";
 
-const port = Number(process.env.PORT ?? 3001);
+const port = Number(process.env.PORT ?? 3010);
 const host = process.env.HOST ?? "0.0.0.0";
 
 // Garante a criacao do banco e do esquema antes de aceitar requisicoes.
 getDb();
+
+if (!authEnabled) {
+  console.warn(
+    "[auth] API_TOKEN nao definido - a API responde sem autenticacao. " +
+      "Defina API_TOKEN antes de expor o backend na rede.",
+  );
+}
 
 const app = Fastify({
   logger: true,
@@ -91,7 +99,19 @@ async function sendAttachment(
   }
 }
 
+// O health fica publico para orquestradores (Docker, uptime) mesmo com
+// autenticacao ativa.
 app.get("/api/health", async () => ({ ok: true }));
+
+app.addHook("onRequest", async (request, reply) => {
+  if (request.url === "/api/health") return;
+  if (isAuthorized(request.headers.authorization)) return;
+
+  await reply.code(401).send({
+    error: "Nao autorizado",
+    hint: "Envie o header Authorization: Bearer <API_TOKEN>",
+  });
+});
 
 app.get("/api/notes", async (request) => {
   const query = (request.query as { q?: string }).q ?? "";

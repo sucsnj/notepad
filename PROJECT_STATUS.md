@@ -24,15 +24,16 @@ O repositório contém **dois projetos independentes**, cada um com seu próprio
 | `frontend/` | Next.js 16 (App Router), React 19, TypeScript, Tailwind 4 | UI, tema, editor TipTap, autosave         |
 | `backend/`  | Fastify 5, TypeScript, SQLite (`node:sqlite`)             | API REST, persistência e arquivos/anexos  |
 
-O frontend faz **proxy** de `/api/*` e `/uploads/*` para o backend via
-`rewrites` do Next (`BACKEND_URL`). Assim o cliente usa URLs relativas
-(mesma origem) e **não há necessidade de CORS**.
+O frontend faz **proxy** de `/api/*` e `/uploads/*` para o backend via Route
+Handlers do Next (`BACKEND_URL`). Assim o cliente usa URLs relativas (mesma
+origem) e **não há necessidade de CORS**. O proxy também injeta o token de API
+(`BACKEND_TOKEN`) no servidor — o token nunca chega ao navegador.
 
 ```
-Navegador ──HTTP──▶ frontend (Next.js :3000)
-                       │  rewrites
+Navegador ──HTTP──▶ frontend (Next.js :3011)
+                       │  Route Handlers + header Authorization
                        ▼
-                    backend (Fastify :3001) ──▶ SQLite (backend/data/notepad.db)
+                    backend (Fastify :3010) ──▶ SQLite (backend/data/notepad.db)
                                             └─▶ uploads (backend/data/uploads)
 ```
 
@@ -54,11 +55,15 @@ notepad/
 │  ├─ tsconfig.json          # ESM, noEmit, strict
 │  ├─ .env.example / .env    # .env não versionado
 │  ├─ .gitignore
+│  ├─ .dockerignore
+│  ├─ Dockerfile              # imagem de produção (node:24-alpine, multi-stage)
+│  ├─ compose.yaml            # backend + perfil "tunnel" (cloudflared)
 │  ├─ scripts/serve.mjs      # injeta flag do SQLite + --env-file e sobe o servidor
 │  ├─ public/uploads/        # anexos legados (/uploads/...)
 │  ├─ data/                  # runtime, ignorado pelo git (DB + uploads)
 │  └─ src/
-│     ├─ server.ts           # bootstrap Fastify + rotas
+│     ├─ server.ts           # bootstrap Fastify + rotas + guarda de token
+│     ├─ auth.ts             # token de API (Bearer) com comparação constante
 │     ├─ db.ts               # conexão SQLite (singleton) + esquema
 │     ├─ notes.ts            # CRUD de anotações
 │     ├─ attachments.ts      # metadados e resolução de arquivos
@@ -69,7 +74,7 @@ notepad/
 │
 └─ frontend/
    ├─ package.json           # scripts: dev | build | start | lint | typecheck
-   ├─ next.config.ts         # allowedDevOrigins + rewrites p/ o backend
+   ├─ next.config.ts         # allowedDevOrigins (proxy do backend e' Route Handler)
    ├─ tsconfig.json          # paths "@/*" -> "./*"
    ├─ eslint.config.mjs
    ├─ postcss.config.mjs
@@ -82,6 +87,8 @@ notepad/
    │  ├─ types.ts            # tipos espelhados do backend (client-side)
    │  ├─ cn.ts               # helper de className
    │  ├─ format.ts           # datas e bytes (pt-BR)
+   │  ├─ proxy.ts            # proxy do servidor -> backend (injeta o token)
+   │  ├─ session.ts          # senha (APP_PASSWORD) + token do cookie
    │  └─ store/              # cache local offline-first (IndexedDB)
    │     ├─ db.ts            # schema do IndexedDB (notes/meta/outbox/conflicts/blobs)
    │     ├─ notesStore.ts    # cache de notas: salvar, ler, buscar, meta
@@ -91,16 +98,22 @@ notepad/
    │     ├─ blobs.ts         # anexos locais (blobs) + URLs "notepad-local://"
    │     ├─ attachmentsRepository.ts # anexar/remover com fila offline
    │     └─ sync.ts          # drenagem da outbox (flushOutbox) + reconciliação
+   ├─ proxy.ts              # guarda de senha (Next 16 "proxy", antes middleware)
    └─ app/
       ├─ layout.tsx          # html/body, fontes, ThemeProvider
       ├─ page.tsx            # renderiza <NoteApp/>
       ├─ globals.css         # Tailwind + estilos do editor
+      ├─ entrar/page.tsx     # tela de login (quando APP_PASSWORD esta definida)
+      ├─ api/[...slug]/      # proxy -> BACKEND_URL/api/* (com o token)
+      ├─ api/sessao/         # POST login / DELETE logout
+      ├─ uploads/[...slug]/  # proxy -> URLs legadas /uploads/*
       └─ components/
          ├─ NoteApp.tsx      # orquestração de estado e autosave
          ├─ NoteList.tsx     # lista + busca + tema
          ├─ NoteEditor.tsx   # título, editor TipTap, anexos
          ├─ EditorToolbar.tsx# barra de formatação (inclui espaçamento de linhas)
          ├─ ConflictDialog.tsx # decisão sobre conflitos de sincronização
+         ├─ LogoutButton.tsx # sair (só com APP_PASSWORD definida)
          ├─ ThemeToggle.tsx  # alternância claro/escuro
          └─ Icons.tsx        # ícones SVG
 ```
@@ -141,18 +154,26 @@ notepad/
   `attachment` e `filename*` UTF-8.
 - CORS: `origin = CORS_ORIGIN` (lista separada por vírgula) ou qualquer origem
   quando vazio. Irrelevante quando se usa o proxy do frontend.
+- **Autenticação**: com `API_TOKEN` definido, todas as rotas exigem
+  `Authorization: Bearer <API_TOKEN>` (comparação em tempo constante); sem o
+  token, a resposta é `401 { error }`. A única rota pública é `/api/health`
+  (usada por Docker e uptime). O aviso `[auth] API_TOKEN nao definido` aparece no
+  boot quando a API fica aberta.
 
 ### 3.3 Variáveis de ambiente (backend/.env)
 
 | Variável             | Padrão               | Descrição                                     |
 | -------------------- | -------------------- | --------------------------------------------- |
-| `PORT`               | `3001`               | Porta HTTP                                    |
+| `PORT`               | `3010`               | Porta HTTP                                    |
 | `HOST`               | `0.0.0.0`            | Host de bind                                  |
 | `DATABASE_PATH`      | `./data/notepad.db`  | Banco SQLite (relativo a `backend/`)          |
 | `UPLOAD_DIR`         | `./data/uploads`     | Diretório de anexos (relativo a `backend/`)   |
 | `MAX_UPLOAD_SIZE_MB` | `20`                 | Limite por arquivo                            |
 | `MAX_JSON_SIZE_MB`   | `10`                 | Limite do corpo JSON                          |
 | `CORS_ORIGIN`        | (vazio)              | Origens permitidas (vazio = qualquer)         |
+| `API_TOKEN`          | (vazio)              | Token Bearer da API (vazio = API aberta)      |
+| `BIND_ADDRESS`       | `127.0.0.1`          | Publicação da porta no host (só no compose)   |
+| `TUNNEL_TOKEN`       | (vazio)              | Token do túnel Cloudflare (só no compose)     |
 
 ### 3.4 Modelo de dados (SQLite)
 
@@ -197,13 +218,35 @@ notepad/
 
 ### 4.1 Proxy para o backend
 
-`frontend/next.config.ts` define `rewrites`:
+O proxy deixou de ser `rewrites` e passou a ser **Route Handlers**, para que o
+frontend consiga injetar o header `Authorization` do backend **no servidor**:
 
-- `/api/:path*` → `${BACKEND_URL}/api/:path*`
-- `/uploads/:path*` → `${BACKEND_URL}/uploads/:path*`
+- `frontend/app/api/[...slug]/route.ts` → `${BACKEND_URL}/api/<slug>`
+- `frontend/app/uploads/[...slug]/route.ts` → `${BACKEND_URL}/uploads/<slug>`
+- `frontend/lib/proxy.ts` — monta a URL, copia os headers (descartando
+  hop-by-hop como `host`, `content-length` e `expect`) e adiciona
+  `Authorization: Bearer ${BACKEND_TOKEN}`.
 
-Assim, todo `fetch("/api/...")` do cliente chega ao backend pela mesma origem.
-`BACKEND_URL` padrão: `http://127.0.0.1:3001`.
+Assim, todo `fetch("/api/...")` do cliente chega ao backend pela mesma origem e o
+token **nunca chega ao navegador**. `BACKEND_URL` padrão: `http://127.0.0.1:3010`.
+
+### 4.1.1 Autenticação
+
+Duas camadas, ambas opcionais (vazias = ambiente local aberto):
+
+| Onde  | Variável   | Efeito                                                                 |
+| ----- | ---------- | ---------------------------------------------------------------------- |
+| Backend | `API_TOKEN`   | Exige `Authorization: Bearer <token>` em toda rota (exceto `/api/health`). |
+| Frontend | `BACKEND_TOKEN` | Token que o Route Handler envia ao backend (mesmo valor de `API_TOKEN`). |
+| Frontend | `APP_PASSWORD` | Exige senha na tela `/entrar`; cookie `notepad_session` (httpOnly).     |
+
+- `frontend/proxy.ts` (o *proxy* do Next 16, antes `middleware`) protege a app:
+  sem cookie válido, páginas vão para `/entrar` e rotas `/api/*` recebem 401.
+- `frontend/lib/session.ts` — comparação em tempo constante e token do cookie
+  derivado de `APP_PASSWORD` (`SHA-256`), sem guardar a senha.
+- `frontend/app/api/sessao/route.ts` — `POST` (login) e `DELETE` (logout).
+- `frontend/app/entrar/page.tsx` — tela de login; botão de sair na barra lateral
+  (`LogoutButton`), exibido só quando `APP_PASSWORD` está definida.
 
 ### 4.2 Componentes
 
@@ -217,6 +260,9 @@ Assim, todo `fetch("/api/...")` do cliente chega ao backend pela mesma origem.
 - **`EditorToolbar`** — undo/redo, títulos H1–H3, negrito/itálico/sublinhado/
   tachado/código, espaçamento de linhas, listas, citação, link, imagem, anexo.
 - **`ThemeToggle`** — `next-themes` (claro/escuro/sistema).
+- **`ConflictDialog`** — escolhe o destino de um conflito de sincronização
+  (manter local / servidor / ambos).
+- **`LogoutButton`** — encerra a sessão (aparece só com `APP_PASSWORD`).
 
 ### 4.3 Editor (TipTap v3)
 
@@ -230,11 +276,13 @@ Assim, todo `fetch("/api/...")` do cliente chega ao backend pela mesma origem.
 
 ### 4.4 Variáveis de ambiente (frontend/.env)
 
-| Variável               | Padrão                    | Descrição                                         |
-| ---------------------- | ------------------------- | ------------------------------------------------- |
-| `PORT`                 | `3000`                    | Porta HTTP do Next (lida por `scripts/serve.mjs`) |
-| `BACKEND_URL`          | `http://127.0.0.1:3001`   | Destino do proxy `/api` e `/uploads`              |
-| `ALLOWED_DEV_ORIGINS`  | `*.*.*.*`, `**.local`     | Origens extras permitidas em dev (HMR)            |
+| Variável               | Padrão                    | Descrição                                        |
+| ---------------------- | ------------------------- | --------------------------------------------------- |
+| `PORT`                 | `3011`                    | Porta HTTP do Next (lida por `scripts/serve.mjs`) |
+| `BACKEND_URL`          | `http://127.0.0.1:3010`   | Destino do proxy `/api` e `/uploads`              |
+| `BACKEND_TOKEN`        | (vazio)                   | Token enviado ao backend (igual ao `API_TOKEN`)    |
+| `APP_PASSWORD`         | (vazio)                   | Senha de acesso (tela `/entrar`); vazio = aberta  |
+| `ALLOWED_DEV_ORIGINS`  | `*.*.*.*`, `**.local`     | Origens extras permitidas em dev (HMR)             |
 
 ---
 
@@ -247,13 +295,13 @@ Assim, todo `fetch("/api/...")` do cliente chega ao backend pela mesma origem.
 cd backend
 npm install
 Copy-Item .env.example .env   # opcional
-npm run dev                   # http://localhost:3001
+npm run dev                   # http://localhost:3010
 
 # Terminal 2 — frontend
 cd frontend
 npm install
 Copy-Item .env.example .env   # opcional
-npm run dev                   # http://localhost:3000
+npm run dev                   # http://localhost:3011
 ```
 
 ### 5.2 Produção (local)
@@ -271,6 +319,57 @@ cd frontend; npm run build; npm start
 cd backend;  npm run typecheck
 cd frontend; npm run build; npm run typecheck; npm run lint
 ```
+
+### 5.4 Backend em container (Docker)
+
+```powershell
+cd backend
+docker compose up -d --build     # build + start
+docker compose logs -f           # logs
+docker compose down              # para
+```
+
+- **`Dockerfile`**: `node:24-alpine`, estágio `deps` (`npm ci`) + `runtime`.
+  O entrypoint é `node scripts/serve.mjs start` (nunca `node src/server.ts`);
+  `serve.mjs` continua decidindo a flag do SQLite conforme a versão do Node.
+  Container roda como usuário `node` e tem `HEALTHCHECK` em `/api/health`.
+- **Persistência**: bind mount `./data:/app/data` — o `notepad.db` (com WAL) e
+  os `uploads` ficam no host, fora da imagem, e sobrevivem a `down`/rebuild.
+  Alternativas:
+  - volume nomeado: troque o mount para `notepad-data:/app/data` e declare
+    `volumes: { notepad-data: }` no compose;
+  - em Linux, se o bind mount falhar por permissão (o container é `node`,
+    uid 1000): `sudo chown -R 1000:1000 backend/data`.
+- **Porta**: publicada em `127.0.0.1:3010` por padrão (`BIND_ADDRESS`). Para
+  liberar na LAN/Tailscale, use `BIND_ADDRESS=0.0.0.0`. Pare o backend do host
+  antes (mesma porta).
+- `tsx` é dependência de **runtime** (o `serve.mjs` usa `--import tsx`), por isso
+  está em `dependencies` — se voltar para `devDependencies`, a imagem quebra.
+- O frontend continua rodando no host e speakando com o container sem mudar nada:
+  `BACKEND_URL=http://127.0.0.1:3010`.
+- **Autenticação no container**: defina `API_TOKEN` no `backend/.env` (o compose
+  injeta todo o `.env`) e o mesmo valor em `BACKEND_TOKEN` no `frontend/.env`. Com
+  isso o backend só aceita o proxy do frontend, mesmo exposto na internet.
+
+### 5.5 Túnel Cloudflare (opcional)
+
+```powershell
+cd backend
+# 1) criar o túnel no painel Zero Trust e copiar o TUNNEL_TOKEN para o .env
+docker compose --profile tunnel up -d
+```
+
+- O serviço `cloudflared` fica no perfil `tunnel` (não sobe por padrão) e usa o
+  **token**, que já embute a configuração — não há `config.yml` no repositório.
+- Sem `TUNNEL_TOKEN` o serviço falha na inicialização com mensagem do próprio
+  `cloudflared`.
+- O `cloudflared` espera o `backend` ficar `healthy` antes de subir.
+
+> **Antes de expor:** a API só fica segura com `API_TOKEN` definido (e o mesmo
+> valor em `BACKEND_TOKEN` no frontend). Sem isso, quem tiver a URL pode ler,
+> alterar e excluir todas as anotações — o CORS não protege clientes
+> não-browser. Para expor a interface inteira, defina também `APP_PASSWORD` no
+> frontend (tela `/entrar`).
 
 ---
 
@@ -316,11 +415,21 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 - [x] Typecheck (backend), build + typecheck + lint (frontend) verdes.
 - [x] Smoke test com os dois servidores: health, proxy, CRUD de notas, upload,
       download de anexo e remoção (incluindo limpeza de arquivos).
+- [x] **Backend em container**: `backend/Dockerfile` (node:24-alpine,
+      multi-stage, usuário `node`, healthcheck) + `backend/compose.yaml` com
+      volume persistente (`./data:/app/data`) e serviço `cloudflared` no perfil
+      `tunnel`. `tsx` movido para `dependencies` (é runtime do `serve.mjs`).
+      Ver [seção 5.4](#54-backend-em-container-docker) e
+      [5.5](#55-túnel-cloudflare-opcional).
 
 ### 8.2 Pendências / próximos passos
 
 - [ ] **Commit**: as mudanças estão no working tree, ainda não commitadas.
 - [x] Offline-first: ver [seção 9](#9-offline-first-roadmap) (Etapas 1–5 concluídas).
+- [x] **Autenticação simples**: `API_TOKEN` (Bearer) no backend + tela `/entrar`
+      com `APP_PASSWORD` no frontend; o proxy (`lib/proxy.ts`) injeta o token no
+      servidor. Substituiu os `rewrites` por Route Handlers.
+- [ ] Opcional: containerizar o frontend e tunelá-lo em vez do backend.
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).
@@ -338,6 +447,13 @@ cd frontend; npm run build; npm run typecheck; npm run lint
 - Em produção, `DATABASE_PATH` e `UPLOAD_DIR` devem apontar para volumes
   persistentes; o processo que serve o anexo precisa acessar os mesmos arquivos
   e banco.
+- **A API não tem autenticação por padrão.** Com `API_TOKEN` (backend) e
+  `APP_PASSWORD` (frontend) definidos, a exposição passa a exigir credencial.
+  Mesmo assim: o token do backend é de uso exclusivo do servidor do frontend —
+  não distribua `BACKEND_TOKEN` para nenhum cliente, e não exponha o backend sem
+  o `API_TOKEN` definido (CORS só afeta navegadores).
+- Sair da sessão não apaga o cache offline: as notas continuam no IndexedDB
+  daquele navegador. Em máquina compartilhada, limpar os dados do site.
 
 ---
 

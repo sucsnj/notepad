@@ -5,7 +5,7 @@ Aplicação de anotações em pt-BR, separada em **dois projetos independentes**
 - **`frontend/`** — Next.js (App Router) + TypeScript + Tailwind CSS v4 + TipTap v3 (SPA).
 - **`backend/`** — API standalone em Fastify + SQLite via `node:sqlite`.
 
-O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (configurável por `BACKEND_URL`), então as chamadas do cliente permanecem em mesma origem (sem necessidade de CORS).
+O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (configurável por `BACKEND_URL`), então as chamadas do cliente permanecem em mesma origem (sem necessidade de CORS). O proxy também injeta o token da API no servidor — ele nunca chega ao navegador.
 
 ## Requisitos
 
@@ -18,14 +18,40 @@ O frontend faz proxy de `/api/*` e `/uploads/*` para o backend (configurável po
 cd backend
 npm install
 Copy-Item .env.example .env   # opcional
-npm run dev                   # http://localhost:3001
+npm run dev                   # http://localhost:3010
 ```
 
 - `npm run dev` — sobe o Fastify com reload (via `tsx`).
 - `npm start` — mesmo servidor, sem watch.
 - `npm run typecheck` — valida os tipos.
 
-Variáveis (`.env`): `PORT` (3001), `HOST` (0.0.0.0), `DATABASE_PATH` (`./data/notepad.db`), `UPLOAD_DIR` (`./data/uploads`), `MAX_UPLOAD_SIZE_MB` (20), `CORS_ORIGIN`.
+Variáveis (`.env`): `PORT` (3010), `HOST` (0.0.0.0), `DATABASE_PATH` (`./data/notepad.db`), `UPLOAD_DIR` (`./data/uploads`), `MAX_UPLOAD_SIZE_MB` (20), `CORS_ORIGIN`, `API_TOKEN`.
+
+`API_TOKEN` ativa a autenticação da API: todas as rotas exigem `Authorization: Bearer <API_TOKEN>` (fora `/api/health`). Em branco, a API fica aberta — prático no uso local, inseguro se exposta.
+
+## Backend em Docker (opcional)
+
+```powershell
+cd backend
+docker compose up -d --build     # sobe o backend em http://127.0.0.1:3010
+docker compose logs -f
+docker compose down
+```
+
+- **Persistência**: o bind mount `./data:/app/data` mantém o SQLite e os uploads no host, fora da imagem (sobrevive a `down` e rebuilds). Para usar um volume nomeado, troque o mount no `compose.yaml` para `notepad-data:/app/data` e declare `volumes: { notepad-data: }`.
+- **Porta**: publicada em `127.0.0.1:3010`. Use `BIND_ADDRESS=0.0.0.0` para liberar na LAN. Pare o backend do host antes (mesma porta).
+- **Autenticação**: defina `API_TOKEN` no `backend/.env` e o mesmo valor em `BACKEND_TOKEN` no `frontend/.env`. O frontend no host continua funcionando sem mudar nada (`BACKEND_URL=http://127.0.0.1:3010`).
+
+### Túnel Cloudflare (opcional)
+
+```powershell
+# crie o túnel no painel Zero Trust e coloque o TUNNEL_TOKEN no backend/.env
+docker compose --profile tunnel up -d
+```
+
+O serviço `cloudflared` só sobe com o perfil `tunnel` e usa o token (que já embute a configuração, sem `config.yml` no repositório).
+
+> ⚠️ **Sem `API_TOKEN` a API fica aberta**: qualquer pessoa com a URL lê, altera e exclui suas anotações — e o CORS não protege clientes não-browser. Para expor também a interface, defina `APP_PASSWORD` no frontend.
 
 ## Frontend
 
@@ -33,13 +59,17 @@ Variáveis (`.env`): `PORT` (3001), `HOST` (0.0.0.0), `DATABASE_PATH` (`./data/n
 cd frontend
 npm install
 Copy-Item .env.example .env   # opcional
-npm run dev                   # http://localhost:3000
+npm run dev                   # http://localhost:3011
 ```
 
 - `npm run dev` / `npm run build` / `npm start` — passam por `scripts/serve.mjs` (lê `PORT` do `.env`, bind em `0.0.0.0`).
 - `npm run lint`, `npm run typecheck`.
 
-Variáveis (`.env`): `PORT` (3000), `BACKEND_URL` (`http://127.0.0.1:3001`), `ALLOWED_DEV_ORIGINS`.
+Variáveis (`.env`): `PORT` (3011), `BACKEND_URL` (`http://127.0.0.1:3010`), `BACKEND_TOKEN`, `APP_PASSWORD`, `ALLOWED_DEV_ORIGINS`.
+
+### Senha de acesso
+
+`APP_PASSWORD` protege a interface: ao abrir o app aparece a tela `/entrar` e, sem um cookie válido, as chamadas da API recebem `401`. `BACKEND_TOKEN` é o token que o servidor do frontend envia ao backend — deve ser **igual** ao `API_TOKEN` do backend e **nunca** deve ir para o navegador. Em branco (padrão), o app fica aberto, como antes.
 
 ## Dados e anexos
 
