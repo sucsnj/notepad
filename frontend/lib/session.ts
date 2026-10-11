@@ -18,12 +18,12 @@ async function sha256(value: string): Promise<string> {
     .join("");
 }
 
-// Sem APP_PASSWORD a aplicacao fica aberta (uso local).
+// Sem APP_PASSWORD nao existe login: o app fica inacessivel (falha fechada).
 export function appPassword(): string {
   return (process.env.APP_PASSWORD ?? "").trim();
 }
 
-export function passwordEnabled(): boolean {
+export function passwordConfigured(): boolean {
   return appPassword().length > 0;
 }
 
@@ -38,7 +38,7 @@ export async function sessionToken(): Promise<string> {
 }
 
 export async function isValidSession(token: string | undefined): Promise<boolean> {
-  if (!passwordEnabled()) return true;
+  if (!passwordConfigured()) return false;
   if (!token) return false;
   return safeEqual(token, await sessionToken());
 }

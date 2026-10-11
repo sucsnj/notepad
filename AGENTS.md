@@ -62,11 +62,11 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,auth,types)  scri
   (20 MB, excesso → `413`); imagens `inline`, demais `attachment`.
 - CORS via `CORS_ORIGIN` (lista por vírgula; vazio = qualquer). Desnecessário no
   fluxo com o proxy do frontend.
-- **Auth**: com `API_TOKEN` definido, tudo exige `Authorization: Bearer <token>`
-  (`401` sem ele); `/api/health` é a única rota pública. O `frontend/lib/proxy.ts`
-  injeta o header a partir de `BACKEND_TOKEN` — nunca exponha esse valor ao
-  cliente. Frontend protegida por `APP_PASSWORD` (`app/entrar` + `proxy.ts`).
-  Ambas vazias = ambiente local aberto.
+- **Auth (obrigatório)**: `API_TOKEN` no backend + `BACKEND_TOKEN` (mesmo valor)
+  no frontend + `APP_PASSWORD` na interface. **Falha fechada**: sem `API_TOKEN` a
+  API recusa tudo (`503`), sem `BACKEND_TOKEN` o proxy recusa (`503`) e sem
+  `APP_PASSWORD` ninguém consegue entrar (toda sessão é inválida). Só
+  `/api/health` é pública no backend. Nunca exponha `BACKEND_TOKEN` ao cliente.
 
 ## Banco e arquivos — backend
 
@@ -133,7 +133,7 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,auth,types)  scri
   LAN) e `TUNNEL_TOKEN`.
 - **Túnel Cloudflare**: `docker compose --profile tunnel up -d` sobe o serviço
   `cloudflared` (perfil opcional, token via `TUNNEL_TOKEN`, sem `config.yml`).
-- Antes de expor: defina `API_TOKEN` no `backend/.env` e o mesmo valor em
+- Obrigatório: defina `API_TOKEN` no `backend/.env` e o mesmo valor em
   `BACKEND_TOKEN` no `frontend/.env`; para expor a interface, `APP_PASSWORD`.
   Sem `API_TOKEN`, quem tiver a URL lê/edita/apaga as anotações (CORS não protege
   clientes não-browser).

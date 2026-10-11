@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { COOKIE_NAME, isValidSession, passwordEnabled } from "@/lib/session";
+import { COOKIE_NAME, isValidSession } from "@/lib/session";
 
-// Protege a aplicacao com a senha de APP_PASSWORD. Sem APP_PASSWORD definida,
-// todas as requisicoes passam (uso local).
+// A senha (APP_PASSWORD) e sempre exigida. Sem ela configurada, ninguem consegue
+// entrar: nenhuma sessao e valida e o app fica inacessivel (falha fechada).
 export async function proxy(request: NextRequest) {
-  if (!passwordEnabled()) return NextResponse.next();
-
   const { pathname } = request.nextUrl;
   const authorized = await isValidSession(request.cookies.get(COOKIE_NAME)?.value);
 

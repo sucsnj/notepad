@@ -13,7 +13,7 @@ import {
 import { deleteAttachment, findAttachmentFile } from "./attachments";
 import { saveUpload, UploadError } from "./uploads";
 import { parseId, stringField } from "./http";
-import { authEnabled, isAuthorized } from "./auth";
+import { authConfigured, isAuthorized } from "./auth";
 
 const port = Number(process.env.PORT ?? 3010);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -21,10 +21,10 @@ const host = process.env.HOST ?? "0.0.0.0";
 // Garante a criacao do banco e do esquema antes de aceitar requisicoes.
 getDb();
 
-if (!authEnabled) {
-  console.warn(
-    "[auth] API_TOKEN nao definido - a API responde sem autenticacao. " +
-      "Defina API_TOKEN antes de expor o backend na rede.",
+if (!authConfigured) {
+  console.error(
+    "[auth] API_TOKEN nao definido - TODAS as requisicoes serao recusadas " +
+      "(503). Defina API_TOKEN e o mesmo valor em BACKEND_TOKEN no frontend.",
   );
 }
 
@@ -105,6 +105,16 @@ app.get("/api/health", async () => ({ ok: true }));
 
 app.addHook("onRequest", async (request, reply) => {
   if (request.url === "/api/health") return;
+
+  // Falha fechada: sem token configurado ninguem acessa.
+  if (!authConfigured) {
+    await reply.code(503).send({
+      error: "API_TOKEN nao configurado",
+      hint: "Defina API_TOKEN no .env do backend e reinicie o processo",
+    });
+    return;
+  }
+
   if (isAuthorized(request.headers.authorization)) return;
 
   await reply.code(401).send({

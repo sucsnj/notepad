@@ -1,10 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 
-// Token compartilhado entre o backend e o proxy do frontend. Quando
-// API_TOKEN nao esta definido a API fica aberta (uso local).
+// Token compartilhado entre o backend e o proxy do frontend. A autenticacao e
+// sempre exigida: sem API_TOKEN a API nao libera nenhuma rota (falha fechada).
 const token = (process.env.API_TOKEN ?? "").trim();
 
-export const authEnabled = token.length > 0;
+export const authConfigured = token.length > 0;
 
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -20,7 +20,7 @@ export function extractBearer(header: string | undefined): string | null {
 }
 
 export function isAuthorized(header: string | undefined): boolean {
-  if (!authEnabled) return true;
+  if (!authConfigured) return false;
   const provided = extractBearer(header);
   return provided !== null && safeEqual(provided, token);
 }

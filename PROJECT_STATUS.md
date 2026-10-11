@@ -154,11 +154,11 @@ notepad/
   `attachment` e `filename*` UTF-8.
 - CORS: `origin = CORS_ORIGIN` (lista separada por vírgula) ou qualquer origem
   quando vazio. Irrelevante quando se usa o proxy do frontend.
-- **Autenticação**: com `API_TOKEN` definido, todas as rotas exigem
-  `Authorization: Bearer <API_TOKEN>` (comparação em tempo constante); sem o
-  token, a resposta é `401 { error }`. A única rota pública é `/api/health`
-  (usada por Docker e uptime). O aviso `[auth] API_TOKEN nao definido` aparece no
-  boot quando a API fica aberta.
+- **Autenticação (falha fechada)**: `API_TOKEN` é obrigatório. Todas as rotas
+  exigem `Authorization: Bearer <API_TOKEN>` (comparação em tempo constante):
+  token ausente/errado → `401`, token não configurado → `503`. A única rota
+  pública é `/api/health` (usada por Docker e uptime). O boot imprime
+  `[auth] API_TOKEN nao definido - TODAS as requisicoes serao recusadas`.
 
 ### 3.3 Variáveis de ambiente (backend/.env)
 
@@ -171,7 +171,7 @@ notepad/
 | `MAX_UPLOAD_SIZE_MB` | `20`                 | Limite por arquivo                            |
 | `MAX_JSON_SIZE_MB`   | `10`                 | Limite do corpo JSON                          |
 | `CORS_ORIGIN`        | (vazio)              | Origens permitidas (vazio = qualquer)         |
-| `API_TOKEN`          | (vazio)              | Token Bearer da API (vazio = API aberta)      |
+| `API_TOKEN`          | — (obrigatório)      | Token Bearer da API; sem ele tudo vira `503`   |
 | `BIND_ADDRESS`       | `127.0.0.1`          | Publicação da porta no host (só no compose)   |
 | `TUNNEL_TOKEN`       | (vazio)              | Token do túnel Cloudflare (só no compose)     |
 
@@ -232,13 +232,15 @@ token **nunca chega ao navegador**. `BACKEND_URL` padrão: `http://127.0.0.1:301
 
 ### 4.1.1 Autenticação
 
-Duas camadas, ambas opcionais (vazias = ambiente local aberto):
+Duas camadas, ambas **obrigatórias** (falha fechada):
 
 | Onde  | Variável   | Efeito                                                                 |
 | ----- | ---------- | ---------------------------------------------------------------------- |
-| Backend | `API_TOKEN`   | Exige `Authorization: Bearer <token>` em toda rota (exceto `/api/health`). |
-| Frontend | `BACKEND_TOKEN` | Token que o Route Handler envia ao backend (mesmo valor de `API_TOKEN`). |
-| Frontend | `APP_PASSWORD` | Exige senha na tela `/entrar`; cookie `notepad_session` (httpOnly).     |
+| Backend | `API_TOKEN`   | Exige `Authorization: Bearer <token>`; **sem ele, `503` em tudo**. |
+| Frontend | `BACKEND_TOKEN` | Token que o Route Handler envia ao backend (mesmo valor de `API_TOKEN`); sem ele o proxy responde `503`. |
+| Frontend | `APP_PASSWORD` | Exige senha na tela `/entrar`; **sem ela, toda sessão é inválida** e o login responde `503`. |
+
+Falha fechada: nenhuma configuração ausente abre acesso.
 
 - `frontend/proxy.ts` (o *proxy* do Next 16, antes `middleware`) protege a app:
   sem cookie válido, páginas vão para `/entrar` e rotas `/api/*` recebem 401.
@@ -280,8 +282,8 @@ Duas camadas, ambas opcionais (vazias = ambiente local aberto):
 | ---------------------- | ------------------------- | --------------------------------------------------- |
 | `PORT`                 | `3011`                    | Porta HTTP do Next (lida por `scripts/serve.mjs`) |
 | `BACKEND_URL`          | `http://127.0.0.1:3010`   | Destino do proxy `/api` e `/uploads`              |
-| `BACKEND_TOKEN`        | (vazio)                   | Token enviado ao backend (igual ao `API_TOKEN`)    |
-| `APP_PASSWORD`         | (vazio)                   | Senha de acesso (tela `/entrar`); vazio = aberta  |
+| `BACKEND_TOKEN`        | — (obrigatório)           | Token enviado ao backend (igual ao `API_TOKEN`)    |
+| `APP_PASSWORD`         | — (obrigatório)           | Senha de acesso (tela `/entrar`)                  |
 | `ALLOWED_DEV_ORIGINS`  | `*.*.*.*`, `**.local`     | Origens extras permitidas em dev (HMR)             |
 
 ---
@@ -365,11 +367,10 @@ docker compose --profile tunnel up -d
   `cloudflared`.
 - O `cloudflared` espera o `backend` ficar `healthy` antes de subir.
 
-> **Antes de expor:** a API só fica segura com `API_TOKEN` definido (e o mesmo
-> valor em `BACKEND_TOKEN` no frontend). Sem isso, quem tiver a URL pode ler,
-> alterar e excluir todas as anotações — o CORS não protege clientes
-> não-browser. Para expor a interface inteira, defina também `APP_PASSWORD` no
-> frontend (tela `/entrar`).
+> **Antes de expor:** é obrigatório ter `API_TOKEN` no backend, o mesmo valor em
+> `BACKEND_TOKEN` no frontend e `APP_PASSWORD` no frontend. Sem qualquer um
+> deles o acesso é **negado** (falha fechada), então um `.env` incompleto
+> derruba o app em vez de deixá-lo aberto.
 
 ---
 

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { checkPassword, COOKIE_NAME, passwordEnabled, sessionToken } from "@/lib/session";
+import { checkPassword, COOKIE_NAME, passwordConfigured, sessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,12 @@ function cookieOptions(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!passwordEnabled()) {
-    return NextResponse.json({ ok: true });
+  // Falha fechada: sem senha configurada ninguem entra.
+  if (!passwordConfigured()) {
+    return NextResponse.json(
+      { error: "APP_PASSWORD nao configurado no servidor" },
+      { status: 503 },
+    );
   }
 
   let password = "";

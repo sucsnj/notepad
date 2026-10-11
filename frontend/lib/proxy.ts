@@ -31,11 +31,24 @@ function buildHeaders(request: Request): Headers {
   return headers;
 }
 
+function misconfigured(): Response {
+  return new Response(
+    JSON.stringify({
+      error: "BACKEND_TOKEN nao configurado",
+      hint: "Defina BACKEND_TOKEN (igual ao API_TOKEN do backend) e reinicie o frontend",
+    }),
+    { status: 503, headers: { "content-type": "application/json" } },
+  );
+}
+
 // Proxy transparente do navegador para o backend, injetando o token de API.
 export async function proxyToBackend(
   request: Request,
   segments: string[] = [],
 ): Promise<Response> {
+  // Falha fechada: sem token o frontend nao consegue falar com o backend.
+  if (!process.env.BACKEND_TOKEN?.trim()) return misconfigured();
+
   const path = segments.map(encodeURIComponent).join("/");
   const search = new URL(request.url).search;
   const target = `${backendOrigin()}/${path}${search}`;
