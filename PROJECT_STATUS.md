@@ -74,7 +74,9 @@ notepad/
 │
 └─ frontend/
    ├─ package.json           # scripts: dev | build | start | lint | typecheck
-   ├─ next.config.ts         # allowedDevOrigins (proxy do backend e' Route Handler)
+   ├─ Dockerfile              # imagem de produção (node:24-slim, 4 estágios)
+   ├─ compose.yaml            # frontend stateless + perfil "tunnel"
+   ├─ .dockerignore
    ├─ tsconfig.json          # paths "@/*" -> "./*"
    ├─ eslint.config.mjs
    ├─ postcss.config.mjs
@@ -353,7 +355,35 @@ docker compose down              # para
   injeta todo o `.env`) e o mesmo valor em `BACKEND_TOKEN` no `frontend/.env`. Com
   isso o backend só aceita o proxy do frontend, mesmo exposto na internet.
 
-### 5.5 Túnel Cloudflare (opcional)
+### 5.6 Frontend em container (Docker)
+
+```powershell
+cd frontend
+docker compose up -d --build
+docker compose logs -f
+docker compose down
+```
+
+- **`Dockerfile`** (`node:24-slim`, quatro estágios): `deps` (`npm ci`), `prod-deps`
+  (`npm ci --omit=dev`), `build` (`node scripts/serve.mjs build`) e `runtime`.
+  O entrypoint continua sendo `scripts/serve.mjs` (nunca `next start` direto),
+  com `PORT=3011` e `HOSTNAME=0.0.0.0`.
+  Usa **slim** (e não alpine) porque o build roda o Turbopack, que traz binários
+  nativos (SWC) menos previsíveis em musl.
+- **Stateless**: não há volume. `.dockerignore` exclui `.env`, então nenhum
+  segredo entra na imagem — `BACKEND_URL`, `BACKEND_TOKEN` e `APP_PASSWORD`
+  chegam em runtime por `env_file`.
+- **`DOCKER_BACKEND_URL`**: dentro do container `127.0.0.1` seria o próprio
+  container, então o compose usa essa variável (padrão
+  `http://host.docker.internal:3010`, com `extra_hosts` para resolver o host).
+  Se os dois containers estiverem na mesma rede, use `http://backend:3010`.
+  O `BACKEND_URL` do `.env` continua valendo quando o frontend roda no host.
+- **Liveness**: `GET /api/vivo` (sem auth e sem depender do backend) é o
+  `HEALTHCHECK` do container; excluído da guarda de senha em `proxy.ts`.
+- **Página `/` é dinâmica** (`force-dynamic`) para que `APP_PASSWORD` seja lida
+  em runtime, e não congelada no build.
+
+### 5.7 Túnel Cloudflare (opcional)
 
 ```powershell
 cd backend
@@ -430,7 +460,9 @@ docker compose --profile tunnel up -d
 - [x] **Autenticação simples**: `API_TOKEN` (Bearer) no backend + tela `/entrar`
       com `APP_PASSWORD` no frontend; o proxy (`lib/proxy.ts`) injeta o token no
       servidor. Substituiu os `rewrites` por Route Handlers.
-- [ ] Opcional: containerizar o frontend e tunelá-lo em vez do backend.
+- [x] **Frontend em container**: `frontend/Dockerfile` (node:24-slim, 4 estagios),
+      `frontend/compose.yaml` (stateless + perfil `tunnel`), `app/api/vivo` para
+      healthcheck e `/` dinamica para ler `APP_PASSWORD` em runtime.
 - [ ] Opcional: CI (typecheck/lint/build) por projeto.
 - [ ] Opcional: testes automatizados (unitários/HTTP) para o backend.
 - [ ] Opcional: etapa de build de produção para o backend (hoje roda via `tsx`).

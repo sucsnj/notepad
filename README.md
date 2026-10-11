@@ -65,7 +65,20 @@ npm run dev                   # http://localhost:3011
 - `npm run dev` / `npm run build` / `npm start` — passam por `scripts/serve.mjs` (lê `PORT` do `.env`, bind em `0.0.0.0`).
 - `npm run lint`, `npm run typecheck`.
 
-Variáveis (`.env`): `PORT` (3011), `BACKEND_URL` (`http://127.0.0.1:3010`), `BACKEND_TOKEN`, `APP_PASSWORD`, `ALLOWED_DEV_ORIGINS`.
+Variáveis (`.env`): `PORT` (3011), `BACKEND_URL` (`http://127.0.0.1:3010`), `DOCKER_BACKEND_URL`, `BACKEND_TOKEN`, `APP_PASSWORD`, `ALLOWED_DEV_ORIGINS`.
+
+### Frontend em Docker (opcional)
+
+```powershell
+cd frontend
+docker compose up -d --build     # http://127.0.0.1:3011
+docker compose logs -f
+docker compose down
+```
+
+- **Stateless**: sem volume e sem segredos na imagem — `BACKEND_TOKEN` e `APP_PASSWORD` chegam em runtime pelo `.env` (`env_file`).
+- **Backend**: dentro do container `127.0.0.1` seria o próprio container, então o compose usa `DOCKER_BACKEND_URL` (padrão `http://host.docker.internal:3010`). Se os dois containers estiverem na mesma rede Docker, ponha `DOCKER_BACKEND_URL=http://backend:3010`.
+- **Túnel**: `docker compose --profile tunnel up -d` (com `TUNNEL_TOKEN` no `.env`) — aponta para o **frontend**, deixando o backend interno e protegido pelo `API_TOKEN`.
 
 ### Senha de acesso
 

@@ -1,0 +1,60 @@
+# Frontend em container (Next.js).
+#   docker compose up -d --build
+#   docker compose logs -f
+#   docker compose down
+#
+# O frontend e stateless: nao ha volume. Os dados ficam no backend.
+#
+# BACKEND_URL do .env aponta para o backend quando o frontend roda no HOST
+# (127.0.0.1:3010). Dentro do container esse endereco seria o proprio
+# container, entao o compose usa DOCKER_BACKEND_URL:
+#   - padrao http://host.docker.internal:3010  (backend em outro container ou
+#     rodando no host, com a porta 3010 publicada)
+#   - http://backend:3010 se os dois containers estiverem na mesma rede.
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: notepad-frontend:latest
+    restart: unless-stopped
+    # BIND_ADDRESS=0.0.0.0 libera a porta na rede local (LAN/Tailscale).
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3011}:3011"
+    env_file:
+      - .env
+    environment:
+      PORT: 3011
+      HOSTNAME: 0.0.0.0
+      # host.docker.internal alcança a porta 3010 publicada na maquina
+      # (backend em container ou rodando direto no host).
+      BACKEND_URL: ${DOCKER_BACKEND_URL:-http://host.docker.internal:3010}
+    # Necessario em Docker Desktop (Windows/macOS) e em Linux para o
+    # host.docker.internal resolver sem IP fixo.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3011/api/vivo').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Tunel Cloudflare (opcional): docker compose --profile tunnel up -d
+  # Agora o tunel aponta para o FRONTEND (o backend segue interno, protegido
+  # pelo API_TOKEN). Exige TUNNEL_TOKEN no .env.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      frontend:
+        condition: service_healthy

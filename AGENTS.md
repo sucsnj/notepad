@@ -131,12 +131,33 @@ backend/   src/ (server,db,notes,attachments,uploads,http,text,auth,types)  scri
   ficar em `devDependencies`, senão `npm ci` da imagem quebra.
 - Variáveis do compose: `BIND_ADDRESS` (padrão `127.0.0.1`; use `0.0.0.0` para
   LAN) e `TUNNEL_TOKEN`.
-- **Túnel Cloudflare**: `docker compose --profile tunnel up -d` sobe o serviço
-  `cloudflared` (perfil opcional, token via `TUNNEL_TOKEN`, sem `config.yml`).
+- O env do container vem do `.env` (`env_file`) + `DATABASE_PATH`/`UPLOAD_DIR`
+  apontando para o volume. Mudou o `.env`? `docker compose up -d --force-recreate`.
+
+## Frontend em container (Docker)
+
+- `frontend/Dockerfile` (node:24-**slim**, 4 estágios: `deps`, `prod-deps`,
+  `build`, `runtime`) e `frontend/compose.yaml`. Slim, não alpine: o build roda o
+  Turbopack (binários nativos do SWC).
+- `cd frontend`: `docker compose up -d --build`.
+- **Stateless** (sem volume). Segredos **não** entram na imagem (`.dockerignore`
+  exclui `.env`): `BACKEND_URL`, `BACKEND_TOKEN` e `APP_PASSWORD` chegam em
+  runtime por `env_file`.
+- **No container, `127.0.0.1` seria o próprio container**: o compose usa
+  `DOCKER_BACKEND_URL` (padrão `http://host.docker.internal:3010`, com
+  `extra_hosts: host-gateway`). `BACKEND_URL` do `.env` vale para o host.
+- `GET /api/vivo` é o HEALTHCHECK (sem auth e sem depender do backend).
+- O `package-lock.json` foi regerado em Linux; se `npm ci` falhar no container
+  com "lock file out of sync", regere com:
+  `docker run --rm -v "${PWD}:/app" -w /app node:24-slim npm install --package-lock-only`.
+- Túnel: `docker compose --profile tunnel up -d` (aponta para o **frontend**;
+  o backend fica interno, protegido pelo `API_TOKEN`).
 - Obrigatório: defina `API_TOKEN` no `backend/.env` e o mesmo valor em
   `BACKEND_TOKEN` no `frontend/.env`; para expor a interface, `APP_PASSWORD`.
   Sem `API_TOKEN`, quem tiver a URL lê/edita/apaga as anotações (CORS não protege
   clientes não-browser).
+- `GET /api/vivo` responde `{ ok: true }` sem auth e sem tocar no backend —
+  é o HEALTHCHECK do container do frontend.
 
 ## Acesso pela rede
 
